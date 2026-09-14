@@ -5,6 +5,15 @@ import { Minimap } from "./Minimap";
 import { runtime } from "./runtime";
 import { formatTime, useGame } from "./store";
 
+const TONE_BG = {
+  sun: "bg-sun",
+  cyan: "bg-cyan",
+  pink: "bg-pink",
+  lime: "bg-lime",
+  paper: "bg-paper",
+  ink: "bg-ink text-paper",
+} as const;
+
 export function Hud() {
   const time = useGame((s) => s.time);
   const collected = useGame((s) => s.collected);
@@ -21,12 +30,26 @@ export function Hud() {
   const compassLeft = useGame((s) => s.compassLeft);
   const lockHint = useGame((s) => s.lockHint);
   const doorHint = useGame((s) => s.doorHint);
+  const onTar = useGame((s) => s.onTar);
+  const toastLabel = useGame((s) => s.toastLabel);
+  const toastTone = useGame((s) => s.toastTone);
+  const toastLeft = useGame((s) => s.toastLeft);
+  const flashTone = useGame((s) => s.flashTone);
+  const flashLeft = useGame((s) => s.flashLeft);
+  const touchActive = useGame((s) => s.touchActive);
   const pause = useGame((s) => s.pause);
   const toggleMute = useGame((s) => s.toggleMute);
   const spec = DIFFICULTIES[difficulty];
 
   return (
     <>
+      {boostLeft > 0 && <div className="fx-vignette fx-dash" aria-hidden />}
+      {revealLeft > 0 && <div className="fx-vignette fx-map" aria-hidden />}
+      {onTar && <div className="fx-vignette fx-tar" aria-hidden />}
+      {flashLeft > 0 && (
+        <div className={`fx-flash fx-flash-${flashTone}`} aria-hidden />
+      )}
+
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:p-4">
         <div className="flex flex-col gap-2">
           <div className="chip-brutal bg-sun">
@@ -89,10 +112,24 @@ export function Hud() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute bottom-[max(5.5rem,env(safe-area-inset-bottom))] left-3 z-20 flex flex-col gap-2 md:bottom-4 md:left-4">
+      {toastLeft > 0 && toastLabel && (
+        <div className="pointer-events-none absolute top-[22%] left-1/2 z-30 -translate-x-1/2">
+          <div className={`pickup-toast border-3 border-ink ${TONE_BG[toastTone]}`}>
+            {toastLabel}
+          </div>
+        </div>
+      )}
+
+      <div className="pointer-events-none absolute bottom-[max(9.5rem,calc(env(safe-area-inset-bottom)+8.2rem))] left-3 z-20 flex flex-col gap-2 md:bottom-4 md:left-4">
         {boostLeft > 0 && <EffectChip tone="cyan" label="DASH" value={boostLeft} />}
         {revealLeft > 0 && <EffectChip tone="pink" label="MAP" value={revealLeft} />}
         {compassLeft > 0 && <EffectChip tone="lime" label="EXIT" value={compassLeft} />}
+        {onTar && (
+          <div className="chip-brutal bg-pink">
+            <span className="font-display text-[10px] tracking-[0.18em]">TAR</span>
+            <span className="text-sm">黏住了，快走</span>
+          </div>
+        )}
         {lockHint && (
           <div className="chip-brutal bg-pink">
             <span className="font-display text-[10px] tracking-[0.18em]">LOCKED</span>
@@ -109,13 +146,13 @@ export function Hud() {
         )}
       </div>
 
-      <div className="pointer-events-none absolute right-3 bottom-[max(5.5rem,env(safe-area-inset-bottom))] z-20 md:right-4 md:bottom-4">
+      <div className="pointer-events-none absolute top-16 right-3 z-20 md:top-auto md:right-4 md:bottom-4">
         <Minimap />
       </div>
 
       {compassLeft > 0 && <CompassArrow />}
 
-      {phase === "playing" && !locked && (
+      {phase === "playing" && !locked && !touchActive && (
         <div className="pointer-events-none absolute top-1/2 left-1/2 z-20 hidden -translate-x-1/2 -translate-y-[4.5rem] md:block">
           <div className="border-3 border-ink bg-paper px-3 py-1.5 shadow-brutal-sm">
             <p className="font-display text-[11px] tracking-widest text-ink">
@@ -166,7 +203,7 @@ function CompassArrow() {
     rot = target - runtime.yaw;
   }
   return (
-    <div className="pointer-events-none absolute bottom-[max(1.2rem,env(safe-area-inset-bottom))] left-1/2 z-20 -translate-x-1/2">
+    <div className="pointer-events-none absolute top-[max(5.5rem,env(safe-area-inset-top))] left-1/2 z-20 -translate-x-1/2 md:top-auto md:bottom-[max(1.2rem,env(safe-area-inset-bottom))]">
       <div className="border-3 border-ink bg-lime px-3 py-2 shadow-brutal-sm">
         <p className="text-center font-display text-[10px] tracking-widest">EXIT</p>
         <div

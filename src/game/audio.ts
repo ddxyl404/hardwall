@@ -81,13 +81,15 @@ export function sfxPickup(): void {
 }
 
 export function sfxDash(): void {
-  beep(220, 0.08, "square", 0.05, 2.2);
-  beep(440, 0.16, "triangle", 0.045, 1.8);
+  beep(220, 0.08, "square", 0.06, 2.2);
+  beep(440, 0.16, "triangle", 0.05, 1.8);
+  beep(880, 0.1, "square", 0.03, 1.6);
 }
 
 export function sfxReveal(): void {
   beep(392, 0.1, "triangle", 0.045);
   beep(988, 0.18, "square", 0.04);
+  beep(1318, 0.22, "triangle", 0.03);
 }
 
 export function sfxCompass(): void {
@@ -101,8 +103,9 @@ export function sfxStamp(): void {
 }
 
 export function sfxWarp(): void {
-  beep(180, 0.08, "sawtooth", 0.04, 3.4);
-  beep(720, 0.22, "triangle", 0.05, 0.35);
+  beep(180, 0.08, "sawtooth", 0.045, 3.4);
+  beep(720, 0.22, "triangle", 0.055, 0.35);
+  beep(90, 0.16, "sine", 0.05, 0.4);
 }
 
 export function sfxDoor(): void {
@@ -111,13 +114,25 @@ export function sfxDoor(): void {
 }
 
 export function sfxPad(): void {
-  beep(260, 0.06, "square", 0.04, 2.6);
-  beep(520, 0.12, "triangle", 0.035, 1.7);
+  beep(260, 0.06, "square", 0.05, 2.6);
+  beep(520, 0.12, "triangle", 0.04, 1.7);
+  beep(1040, 0.08, "square", 0.025, 1.4);
 }
 
 export function sfxPop(): void {
-  beep(640, 0.05, "square", 0.045, 0.4);
+  beep(640, 0.05, "square", 0.05, 0.4);
   beep(180, 0.12, "sine", 0.05, 0.35);
+}
+
+export function sfxBounce(): void {
+  beep(220, 0.07, "square", 0.05, 2.8);
+  beep(640, 0.05, "square", 0.045, 0.4);
+  beep(980, 0.1, "triangle", 0.04, 1.5);
+}
+
+export function sfxTar(): void {
+  beep(70, 0.14, "sine", 0.05, 0.45);
+  beep(110, 0.18, "triangle", 0.03, 0.5);
 }
 
 export function sfxLock(): void {

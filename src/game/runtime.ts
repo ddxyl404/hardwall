@@ -2,6 +2,7 @@ import { CELL, EYE } from "./constants";
 import type { DifficultyId } from "./difficulty";
 import type { Aabb, MazeData } from "./maze";
 import { cellCenter, spawnYaw, worldToCell } from "./maze";
+import type { ToastTone } from "./pickups";
 
 export type ControlsProbe = {
   getYaw: () => number;
@@ -46,6 +47,8 @@ export type Runtime = {
   injectedKeys: string[] | null;
   touchX: number;
   touchY: number;
+  touchSprint: boolean;
+  touchActive: boolean;
   lookAX: number;
   lookAY: number;
   lookSens: number;
@@ -59,6 +62,8 @@ export type Runtime = {
   lastBump: number;
   lastFoot: number;
   lastLockNudge: number;
+  lastDoorBump: number;
+  lastTarSfx: number;
   boostUntil: number;
   revealUntil: number;
   compassUntil: number;
@@ -66,6 +71,13 @@ export type Runtime = {
   doorHintUntil: number;
   hop: number;
   fovKick: number;
+  hitstop: number;
+  onTar: boolean;
+  toastLabel: string;
+  toastTone: ToastTone;
+  toastUntil: number;
+  flashTone: ToastTone | "ink";
+  flashUntil: number;
   difficulty: DifficultyId;
 };
 
@@ -95,6 +107,8 @@ export const runtime: Runtime = {
   injectedKeys: null,
   touchX: 0,
   touchY: 0,
+  touchSprint: false,
+  touchActive: false,
   lookAX: 0,
   lookAY: 0,
   lookSens: 1,
@@ -108,6 +122,8 @@ export const runtime: Runtime = {
   lastBump: 0,
   lastFoot: 0,
   lastLockNudge: 0,
+  lastDoorBump: 0,
+  lastTarSfx: 0,
   boostUntil: 0,
   revealUntil: 0,
   compassUntil: 0,
@@ -115,8 +131,33 @@ export const runtime: Runtime = {
   doorHintUntil: 0,
   hop: 0,
   fovKick: 0,
+  hitstop: 0,
+  onTar: false,
+  toastLabel: "",
+  toastTone: "sun",
+  toastUntil: 0,
+  flashTone: "sun",
+  flashUntil: 0,
   difficulty: "hard",
 };
+
+export function isTouchPreferred(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia("(pointer: coarse)").matches ||
+    window.matchMedia("(hover: none)").matches
+  );
+}
+
+export function pushToast(label: string, tone: ToastTone, flash = true): void {
+  runtime.toastLabel = label;
+  runtime.toastTone = tone;
+  runtime.toastUntil = runtime.time + 1.55;
+  if (flash) {
+    runtime.flashTone = tone;
+    runtime.flashUntil = runtime.time + 0.28;
+  }
+}
 
 export function loadRuntime(maze: MazeData): void {
   const spawn = cellCenter(maze.start.cx, maze.start.cz);
@@ -143,6 +184,7 @@ export function loadRuntime(maze: MazeData): void {
   runtime.injectedKeys = null;
   runtime.touchX = 0;
   runtime.touchY = 0;
+  runtime.touchSprint = false;
   runtime.lookAX = 0;
   runtime.lookAY = 0;
   runtime.trauma = 0;
@@ -152,6 +194,8 @@ export function loadRuntime(maze: MazeData): void {
   runtime.lastBump = 0;
   runtime.lastFoot = 0;
   runtime.lastLockNudge = 0;
+  runtime.lastDoorBump = 0;
+  runtime.lastTarSfx = 0;
   runtime.boostUntil = 0;
   runtime.revealUntil = 0;
   runtime.compassUntil = 0;
@@ -159,6 +203,11 @@ export function loadRuntime(maze: MazeData): void {
   runtime.doorHintUntil = 0;
   runtime.hop = 0;
   runtime.fovKick = 0;
+  runtime.hitstop = 0;
+  runtime.onTar = false;
+  runtime.toastLabel = "";
+  runtime.toastUntil = 0;
+  runtime.flashUntil = 0;
   runtime.reducedMotion =
     typeof matchMedia !== "undefined" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -191,6 +240,13 @@ export function tryOpenDoors(): boolean {
   }
   if (opened) rebuildCollision();
   return opened;
+}
+
+export function nextDoorNeed(): number {
+  const maze = runtime.maze;
+  if (!maze) return 0;
+  const next = maze.doors.find((d) => !runtime.openDoors.has(d.id));
+  return next?.need ?? 0;
 }
 
 export function exitIsLocked(): boolean {

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { CELL } from "./constants";
+import { PICKUP_INFO } from "./pickups";
 import { runtime } from "./runtime";
 
 const SIZE = 200;
@@ -35,7 +36,7 @@ export function Minimap() {
           ref={ref}
           width={SIZE}
           height={SIZE}
-          className="block h-28 w-28 md:h-36 md:w-36"
+          className="block h-24 w-24 md:h-36 md:w-36"
         />
       </div>
     </div>
@@ -84,6 +85,7 @@ function paint(ctx: CanvasRenderingContext2D) {
       );
       const isWarp = maze.teleporters.some((t) => t.cx === x && t.cz === z);
       const isBoost = maze.boosts.some((t) => t.cx === x && t.cz === z);
+      const isTar = maze.tars.some((t) => t.cx === x && t.cz === z);
       ctx.fillStyle = isExit
         ? "#C6F000"
         : isStart
@@ -92,9 +94,11 @@ function paint(ctx: CanvasRenderingContext2D) {
             ? "#00D4E8"
             : isBoost
               ? "#FFE500"
-              : isYard
-                ? "#FFEFC2"
-                : "#F3E4B8";
+              : isTar
+                ? "#FF5A8A"
+                : isYard
+                  ? "#FFEFC2"
+                  : "#F3E4B8";
       ctx.fillRect(ox + x * cw + 1, oy + z * ch + 1, cw - 2, ch - 2);
     }
   }
@@ -171,14 +175,7 @@ function paint(ctx: CanvasRenderingContext2D) {
   for (const p of maze.pickups) {
     if (runtime.collected.has(p.id)) continue;
     if (!seen(p.cx, p.cz)) continue;
-    const colors: Record<string, string> = {
-      block: "#FFE500",
-      dash: "#00D4E8",
-      reveal: "#FF5A8A",
-      compass: "#C6F000",
-      stamp: "#FFEFC2",
-    };
-    ctx.fillStyle = colors[p.kind] ?? "#FFE500";
+    ctx.fillStyle = PICKUP_INFO[p.kind].hex;
     ctx.strokeStyle = "#111111";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -204,7 +201,7 @@ function paint(ctx: CanvasRenderingContext2D) {
     ctx.stroke();
   }
 
-  if (runtime.visited[maze.exit.cz * maze.cols + maze.exit.cx]) {
+  if (runtime.visited[maze.exit.cz * maze.cols + maze.exit.cx] || revealed) {
     ctx.fillStyle = "#111111";
     ctx.font = '900 9px "Archivo Black", sans-serif';
     ctx.textAlign = "center";

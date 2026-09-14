@@ -48,7 +48,7 @@ function SettingsBody() {
     <div className="flex flex-col gap-4">
       <label className="block">
         <span className="font-display text-xs tracking-[0.18em] text-ink/70">
-          鼠标灵敏度
+          视角灵敏度
         </span>
         <input
           type="range"
@@ -58,7 +58,7 @@ function SettingsBody() {
           value={lookSens}
           onChange={(e) => setLookSens(Number(e.target.value))}
           className="slider-brutal mt-2"
-          aria-label="鼠标灵敏度"
+          aria-label="视角灵敏度"
         />
         <span className="mt-1 block font-mono text-sm tabular-nums text-ink/70">
           {lookSens.toFixed(2)}×
@@ -85,15 +85,15 @@ function HowBody() {
     <div className="flex flex-col gap-3 text-sm leading-snug text-ink/80">
       <div className="grid grid-cols-2 gap-2">
         <div className="info-card bg-sun">
-          <p className="font-display text-xs tracking-widest">WASD</p>
+          <p className="font-display text-xs tracking-widest">WASD / 左摇杆</p>
           <p>移动 / 平移</p>
         </div>
         <div className="info-card bg-cyan">
-          <p className="font-display text-xs tracking-widest">MOUSE</p>
+          <p className="font-display text-xs tracking-widest">MOUSE / LOOK</p>
           <p>拖动看向</p>
         </div>
         <div className="info-card bg-paper">
-          <p className="font-display text-xs tracking-widest">SHIFT</p>
+          <p className="font-display text-xs tracking-widest">SHIFT / GO</p>
           <p>冲刺</p>
         </div>
         <div className="info-card bg-lime">
@@ -103,19 +103,20 @@ function HowBody() {
       </div>
       <p className="font-display text-xs tracking-[0.18em] text-ink/60">ITEMS</p>
       <ul className="grid gap-2">
-        <li className="info-card bg-sun">黄块 · 收集计分</li>
-        <li className="info-card bg-cyan">青锥 · 疾跑加速</li>
-        <li className="info-card bg-pink">粉晶 · 小地图全开</li>
-        <li className="info-card bg-lime">绿标 · 出口指南针</li>
-        <li className="info-card bg-paper">奶油章 · 贴满就开闸</li>
+        <li className="info-card bg-sun">BLOCK 黄块 · 收集计分</li>
+        <li className="info-card bg-cyan">DASH 青锥 · 疾跑加速，拖出残影</li>
+        <li className="info-card bg-pink">MAP 粉晶 · 小地图全开，雾气散开</li>
+        <li className="info-card bg-lime">EXIT 绿标 · 脚下箭头 + 指南针</li>
+        <li className="info-card bg-paper">STAMP 奶油章 · 贴满就开闸</li>
       </ul>
       <p className="font-display text-xs tracking-[0.18em] text-ink/60">WORLD</p>
       <ul className="grid gap-2">
-        <li className="info-card bg-cyan">青环 WARP · 成对传送</li>
-        <li className="info-card bg-pink">粉门 GATE · 捷径闸门</li>
-        <li className="info-card bg-sun">黄箭 ARROW · 把你弹出去</li>
+        <li className="info-card bg-cyan">WARP 青环 · 成对传送，闪一下就到对面</li>
+        <li className="info-card bg-pink">GATE 粉门 · 闸上写着要几枚贴章</li>
+        <li className="info-card bg-sun">ARROW 黄箭 · 沿箭头方向弹射</li>
+        <li className="info-card bg-lime">POP 气球 · 撞破会把你弹出去</li>
+        <li className="info-card bg-pink">TAR 墨潭 · 踩上去黏住，减速看不清</li>
         <li className="info-card bg-paper">YARD · 2×2 雕塑庭院</li>
-        <li className="info-card bg-lime">POP · 走廊气球，撞破有彩屑</li>
       </ul>
       <p>暴墙关必须收齐黄块，粉色闸门才会打开。</p>
     </div>
@@ -186,7 +187,7 @@ export function StartScreen({ onPlay }: { onPlay: () => void }) {
             WALL
           </h1>
           <p className="mt-3 max-w-sm text-base leading-snug text-ink/80">
-            彩色硬边迷宫。捡色块、踩传送、贴章开闸，走出绿色出口。
+            彩色硬边迷宫。捡色块、踩传送、贴章开闸，走出绿色出口。手机也能玩。
           </p>
         </header>
 

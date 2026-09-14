@@ -45,6 +45,13 @@ export type BoostPad = {
   dz: number;
 };
 
+export type TarPad = {
+  cx: number;
+  cz: number;
+  x: number;
+  z: number;
+};
+
 export type DoorSpec = {
   id: number;
   cx: number;
@@ -78,6 +85,7 @@ export type MazeData = {
   exitNeedsAll: boolean;
   teleporters: Teleporter[];
   boosts: BoostPad[];
+  tars: TarPad[];
   doors: DoorSpec[];
   courtyards: Courtyard[];
   pops: PopOrb[];
@@ -245,6 +253,7 @@ export function generateMaze(seed: number, difficulty: DifficultyId = "hard"): M
   const boosts = placeBoosts(cellWalls, cols, rows, spec.boosts, rng, reserved);
   const doors = placeDoors(cellWalls, cols, rows, spec.doors, spec.doorNeed, rng);
   const pops = placePops(cellWalls, cols, rows, spec.pops, rng, reserved);
+  const tars = placeTars(cellWalls, cols, rows, spec.tars, rng, reserved);
   const doorKeys = new Set(doors.map((d) => `${d.cx},${d.cz},${d.dir}`));
 
   const walls: WallSpec[] = [];
@@ -327,6 +336,7 @@ export function generateMaze(seed: number, difficulty: DifficultyId = "hard"): M
     exitNeedsAll: spec.exitNeedsAll,
     teleporters,
     boosts,
+    tars,
     doors,
     courtyards,
     pops,
@@ -439,6 +449,32 @@ function placeBoosts(
   return picked;
 }
 
+function placeTars(
+  grid: CellWalls[][],
+  cols: number,
+  rows: number,
+  count: number,
+  rng: () => number,
+  reserved: Set<number>,
+): TarPad[] {
+  const spots: { cx: number; cz: number }[] = [];
+  for (let z = 0; z < rows; z++) {
+    for (let x = 0; x < cols; x++) {
+      if (reserved.has(z * cols + x)) continue;
+      if (x === 0 && z === 0) continue;
+      const n = openCount(grid[z]![x]!);
+      if (n < 2) continue;
+      spots.push({ cx: x, cz: z });
+    }
+  }
+  const picked = shuffle(rng, spots).slice(0, count);
+  return picked.map((p) => {
+    reserved.add(p.cz * cols + p.cx);
+    const c = cellCenter(p.cx, p.cz);
+    return { cx: p.cx, cz: p.cz, x: c.x, z: c.z };
+  });
+}
+
 function placeDoors(
   grid: CellWalls[][],
   cols: number,
@@ -466,6 +502,7 @@ function placeDoors(
     const sz = p.dir === "s" ? WALL_T : CELL + overlap;
     const hx = sx * 0.5;
     const hz = sz * 0.5;
+    const doorNeed = Math.max(1, need - Math.max(0, count - 1 - id));
     return {
       id,
       cx: p.cx,
@@ -475,7 +512,7 @@ function placeDoors(
       z,
       sx,
       sz,
-      need,
+      need: doorNeed,
       aabb: { minX: x - hx, maxX: x + hx, minZ: z - hz, maxZ: z + hz },
     };
   });

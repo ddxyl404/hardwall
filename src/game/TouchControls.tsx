@@ -1,120 +1,172 @@
 import { useEffect, useRef, useState } from "react";
 import { TOUCH_LOOK_SENS, MOUSE_SENS } from "./constants";
-import { runtime } from "./runtime";
+import { isTouchPreferred, runtime } from "./runtime";
 
-type Stick = {
-  id: number;
-  ox: number;
-  oy: number;
-  x: number;
-  y: number;
-};
+type Stick = { x: number; y: number };
 
 export function TouchControls() {
   const [enabled, setEnabled] = useState(false);
-  const [stick, setStick] = useState<Stick | null>(null);
-  const stickRef = useRef<Stick | null>(null);
+  const [stick, setStick] = useState<Stick>({ x: 0, y: 0 });
+  const [looking, setLooking] = useState(false);
+  const [sprinting, setSprinting] = useState(false);
+  const stickId = useRef<number | null>(null);
   const lookId = useRef<number | null>(null);
   const lastLook = useRef({ x: 0, y: 0 });
-  const rootRef = useRef<HTMLDivElement>(null);
+  const stickEl = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const coarse =
-      window.matchMedia("(pointer: coarse)").matches ||
-      navigator.maxTouchPoints > 0;
-    setEnabled(coarse);
+    const enable = () => {
+      runtime.touchActive = true;
+      setEnabled(true);
+    };
+    if (isTouchPreferred()) enable();
+    const onFirstTouch = () => enable();
+    window.addEventListener("touchstart", onFirstTouch, { once: true, passive: true });
+    return () => window.removeEventListener("touchstart", onFirstTouch);
   }, []);
 
   useEffect(() => {
     if (!enabled) return;
-    const el = rootRef.current;
-    if (!el) return;
-
-    const onDown = (e: PointerEvent) => {
-      if (e.pointerType === "mouse") return;
-      const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const left = x < rect.width * 0.46;
-      if (left && !stickRef.current) {
-        el.setPointerCapture(e.pointerId);
-        const next = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: 0, y: 0 };
-        stickRef.current = next;
-        setStick(next);
-      } else if (!left && lookId.current === null) {
-        el.setPointerCapture(e.pointerId);
-        lookId.current = e.pointerId;
-        lastLook.current = { x: e.clientX, y: e.clientY };
-      }
-    };
-
-    const onMove = (e: PointerEvent) => {
-      const cur = stickRef.current;
-      if (cur && e.pointerId === cur.id) {
-        const dx = e.clientX - cur.ox;
-        const dy = e.clientY - cur.oy;
-        const max = 52;
-        const mag = Math.hypot(dx, dy);
-        const scale = mag > max ? max / mag : 1;
-        const sx = dx * scale;
-        const sy = dy * scale;
-        runtime.touchX = sx / max;
-        runtime.touchY = -sy / max;
-        const next = { ...cur, x: sx, y: sy };
-        stickRef.current = next;
-        setStick(next);
-      } else if (lookId.current === e.pointerId) {
-        const mx = e.clientX - lastLook.current.x;
-        const my = e.clientY - lastLook.current.y;
-        lastLook.current = { x: e.clientX, y: e.clientY };
-        runtime.lookAX += mx * (TOUCH_LOOK_SENS / MOUSE_SENS);
-        runtime.lookAY += my * (TOUCH_LOOK_SENS / MOUSE_SENS);
-      }
-    };
-
-    const onUp = (e: PointerEvent) => {
-      if (stickRef.current && e.pointerId === stickRef.current.id) {
-        runtime.touchX = 0;
-        runtime.touchY = 0;
-        stickRef.current = null;
-        setStick(null);
-      }
-      if (lookId.current === e.pointerId) lookId.current = null;
-    };
-
-    el.addEventListener("pointerdown", onDown);
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", onUp);
-    el.addEventListener("pointercancel", onUp);
+    runtime.touchActive = true;
     return () => {
-      el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onUp);
       runtime.touchX = 0;
       runtime.touchY = 0;
+      runtime.touchSprint = false;
     };
   }, [enabled]);
 
   if (!enabled) return null;
 
+  const onStickDown = (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse") return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    stickId.current = e.pointerId;
+    moveStick(e.clientX, e.clientY);
+  };
+
+  const onStickMove = (e: React.PointerEvent) => {
+    if (stickId.current !== e.pointerId) return;
+    e.preventDefault();
+    moveStick(e.clientX, e.clientY);
+  };
+
+  const onStickUp = (e: React.PointerEvent) => {
+    if (stickId.current !== e.pointerId) return;
+    stickId.current = null;
+    runtime.touchX = 0;
+    runtime.touchY = 0;
+    setStick({ x: 0, y: 0 });
+  };
+
+  const moveStick = (cx: number, cy: number) => {
+    const el = stickEl.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const ox = rect.left + rect.width / 2;
+    const oy = rect.top + rect.height / 2;
+    const dx = cx - ox;
+    const dy = cy - oy;
+    const max = 48;
+    const mag = Math.hypot(dx, dy);
+    const scale = mag > max ? max / mag : 1;
+    const sx = dx * scale;
+    const sy = dy * scale;
+    runtime.touchX = sx / max;
+    runtime.touchY = -sy / max;
+    setStick({ x: sx, y: sy });
+  };
+
+  const onLookDown = (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse") return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    lookId.current = e.pointerId;
+    lastLook.current = { x: e.clientX, y: e.clientY };
+    setLooking(true);
+  };
+
+  const onLookMove = (e: React.PointerEvent) => {
+    if (lookId.current !== e.pointerId) return;
+    e.preventDefault();
+    const mx = e.clientX - lastLook.current.x;
+    const my = e.clientY - lastLook.current.y;
+    lastLook.current = { x: e.clientX, y: e.clientY };
+    runtime.lookAX += mx * (TOUCH_LOOK_SENS / MOUSE_SENS);
+    runtime.lookAY += my * (TOUCH_LOOK_SENS / MOUSE_SENS);
+  };
+
+  const onLookUp = (e: React.PointerEvent) => {
+    if (lookId.current !== e.pointerId) return;
+    lookId.current = null;
+    setLooking(false);
+  };
+
+  const onSprintDown = (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse") return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    runtime.touchSprint = true;
+    setSprinting(true);
+  };
+
+  const onSprintUp = () => {
+    runtime.touchSprint = false;
+    setSprinting(false);
+  };
+
   return (
-    <div
-      ref={rootRef}
-      className="absolute inset-0 z-10 touch-none"
-      style={{ touchAction: "none" }}
-    >
-      <div className="pointer-events-none absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-5">
-        <div className="relative size-[7.25rem] rounded-full border-3 border-ink bg-paper/80 shadow-brutal-sm">
+    <div className="pointer-events-none absolute inset-0 z-10 touch-none">
+      <div
+        className="pointer-events-auto absolute bottom-[max(1.1rem,env(safe-area-inset-bottom))] left-4"
+        onPointerDown={onStickDown}
+        onPointerMove={onStickMove}
+        onPointerUp={onStickUp}
+        onPointerCancel={onStickUp}
+        style={{ touchAction: "none" }}
+      >
+        <div
+          ref={stickEl}
+          className="relative size-[7.4rem] rounded-full border-3 border-ink bg-paper/85 shadow-brutal-sm"
+        >
           <span
-            className="absolute size-11 -translate-x-1/2 -translate-y-1/2 border-3 border-ink bg-sun"
+            className="absolute size-12 -translate-x-1/2 -translate-y-1/2 border-3 border-ink bg-sun"
             style={{
-              left: `calc(50% + ${stick?.x ?? 0}px)`,
-              top: `calc(50% + ${stick?.y ?? 0}px)`,
+              left: `calc(50% + ${stick.x}px)`,
+              top: `calc(50% + ${stick.y}px)`,
             }}
           />
         </div>
-        <p className="mt-2 text-center font-display text-[10px] tracking-widest text-ink">
+        <p className="mt-1.5 text-center font-display text-[10px] tracking-widest text-ink">
           MOVE
+        </p>
+      </div>
+
+      <div
+        className={`pointer-events-auto absolute right-4 bottom-[max(7.4rem,calc(env(safe-area-inset-bottom)+6.2rem))] grid size-16 place-items-center border-3 border-ink shadow-brutal-sm ${
+          sprinting ? "bg-cyan" : "bg-paper/85"
+        }`}
+        onPointerDown={onSprintDown}
+        onPointerUp={onSprintUp}
+        onPointerCancel={onSprintUp}
+        style={{ touchAction: "none" }}
+        aria-label="冲刺"
+      >
+        <span className="font-display text-[11px] tracking-widest">GO</span>
+      </div>
+
+      <div
+        className={`pointer-events-auto absolute right-4 bottom-[max(1.1rem,env(safe-area-inset-bottom))] size-[7.4rem] rounded-full border-3 border-ink shadow-brutal-sm ${
+          looking ? "bg-pink/80" : "bg-paper/80"
+        }`}
+        onPointerDown={onLookDown}
+        onPointerMove={onLookMove}
+        onPointerUp={onLookUp}
+        onPointerCancel={onLookUp}
+        style={{ touchAction: "none" }}
+      >
+        <p className="absolute inset-0 grid place-items-center font-display text-[11px] tracking-widest text-ink">
+          LOOK
         </p>
       </div>
     </div>

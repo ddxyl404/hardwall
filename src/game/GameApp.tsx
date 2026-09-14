@@ -3,7 +3,7 @@ import { unlockAudio } from "./audio";
 import { generateMaze } from "./maze";
 import { Crosshair, Hud } from "./Hud";
 import { PauseScreen, StartScreen, WinScreen } from "./Overlays";
-import { loadRuntime } from "./runtime";
+import { isTouchPreferred, loadRuntime, runtime } from "./runtime";
 import { useGame } from "./store";
 import { TouchControls } from "./TouchControls";
 
@@ -28,7 +28,7 @@ export function GameApp() {
     unlockAudio();
     useGame.getState().resume();
     const canvas = canvasRef.current;
-    if (canvas && !("ontouchstart" in window && navigator.maxTouchPoints > 0)) {
+    if (canvas && !runtime.touchActive && !isTouchPreferred()) {
       try {
         canvas.requestPointerLock();
       } catch {

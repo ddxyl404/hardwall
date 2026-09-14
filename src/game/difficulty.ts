@@ -17,6 +17,7 @@ export type Difficulty = {
   courtyards: number;
   warpPairs: number;
   boosts: number;
+  tars: number;
   doors: number;
   doorNeed: number;
   fogNear: number;
@@ -43,6 +44,7 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
     courtyards: 1,
     warpPairs: 1,
     boosts: 3,
+    tars: 2,
     doors: 1,
     doorNeed: 2,
     fogNear: 56,
@@ -67,6 +69,7 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
     courtyards: 2,
     warpPairs: 1,
     boosts: 5,
+    tars: 4,
     doors: 1,
     doorNeed: 3,
     fogNear: 42,
@@ -84,15 +87,16 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
     extraOpen: 0.035,
     blocks: 12,
     dashes: 1,
-    reveals: 0,
+    reveals: 1,
     compasses: 1,
-    stamps: 4,
+    stamps: 5,
     pops: 6,
     courtyards: 3,
     warpPairs: 2,
     boosts: 7,
+    tars: 8,
     doors: 2,
-    doorNeed: 5,
+    doorNeed: 3,
     fogNear: 26,
     fogFar: 58,
     exitNeedsAll: true,
@@ -103,8 +107,11 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
 export const DIFFICULTY_LIST: DifficultyId[] = ["soft", "hard", "brutal"];
 
 export const DASH_TIME = 8;
-export const REVEAL_TIME = 9;
-export const COMPASS_TIME = 14;
-export const DASH_MULT = 1.42;
-export const PAD_BOOST = 10.5;
-export const PAD_BOOST_CAP = 13.5;
+export const REVEAL_TIME = 10;
+export const COMPASS_TIME = 16;
+export const DASH_MULT = 1.58;
+export const PAD_BOOST = 12.8;
+export const PAD_BOOST_CAP = 16.2;
+export const TAR_SLOW = 0.36;
+export const POP_LAUNCH = 9.6;
+export const TOAST_TIME = 1.55;

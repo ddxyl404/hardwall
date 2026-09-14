@@ -13,6 +13,7 @@ import {
   WALK_SPEED,
 } from "./constants";
 import {
+  sfxBounce,
   sfxBump,
   sfxCompass,
   sfxDash,
@@ -24,6 +25,7 @@ import {
   sfxPop,
   sfxReveal,
   sfxStamp,
+  sfxTar,
   sfxWarp,
   sfxWin,
   unlockAudio,
@@ -35,16 +37,21 @@ import {
   DIFFICULTIES,
   PAD_BOOST,
   PAD_BOOST_CAP,
+  POP_LAUNCH,
   REVEAL_TIME,
+  TAR_SLOW,
 } from "./difficulty";
 import { moveAndCollide } from "./collision";
 import { cellCenter } from "./maze";
 import type { PickupKind } from "./maze";
+import { PICKUP_INFO } from "./pickups";
 import {
   exitIsLocked,
   exploreAtPlayer,
   held,
   installControlsProbe,
+  markExplore,
+  pushToast,
   runtime,
   tryOpenDoors,
 } from "./runtime";
@@ -74,14 +81,6 @@ type Particle = {
   life: number;
 };
 
-const KIND_COLOR: Record<PickupKind, number> = {
-  block: PALETTE.sun,
-  dash: PALETTE.cyan,
-  reveal: PALETTE.pink,
-  compass: PALETTE.lime,
-  stamp: PALETTE.cream,
-};
-
 function isCoarsePointer(): boolean {
   return (
     (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) ||
@@ -102,6 +101,7 @@ export class HardwallEngine {
   private world: WorldHandle | null = null;
   private acc = 0;
   private hudAcc = 0;
+  private trailAcc = 0;
   private lastTime = 0;
   private disposed = false;
   private particles: Particle[] = [];
@@ -115,6 +115,11 @@ export class HardwallEngine {
   private exitGlow: THREE.PointLight | null = null;
   private hemi: THREE.HemisphereLight;
   private sun: THREE.DirectionalLight;
+  private compassNeedle: THREE.Group;
+  private fogNear = 42;
+  private fogFar = 88;
+  private fogNearTarget = 42;
+  private fogFarTarget = 88;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -157,6 +162,9 @@ export class HardwallEngine {
 
     this.particleGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
     this.particleMat = new THREE.MeshBasicMaterial({ color: PALETTE.sun });
+
+    this.compassNeedle = this.makeCompassNeedle();
+    this.scene.add(this.compassNeedle);
 
     this.resizeObs = new ResizeObserver(() => this.layout());
     this.resizeObs.observe(canvas.parentElement ?? canvas);
@@ -205,8 +213,42 @@ export class HardwallEngine {
     for (const p of this.particlePool) {
       (p.material as THREE.Material).dispose();
     }
+    this.compassNeedle.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        const mat = o.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else mat.dispose();
+      }
+    });
     this.renderer.dispose();
     if (window.__controlsTest) delete window.__controlsTest;
+  }
+
+  private makeCompassNeedle(): THREE.Group {
+    const g = new THREE.Group();
+    const shaft = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.05, 0.85),
+      new THREE.MeshLambertMaterial({
+        color: PALETTE.lime,
+        emissive: PALETTE.lime,
+        emissiveIntensity: 0.45,
+      }),
+    );
+    shaft.position.z = -0.2;
+    const head = new THREE.Mesh(
+      new THREE.ConeGeometry(0.16, 0.32, 4),
+      new THREE.MeshLambertMaterial({
+        color: PALETTE.ink,
+        emissive: PALETTE.lime,
+        emissiveIntensity: 0.2,
+      }),
+    );
+    head.rotation.x = -Math.PI / 2;
+    head.position.z = -0.72;
+    g.add(shaft, head);
+    g.visible = false;
+    return g;
   }
 
   private rebuild(): void {
@@ -231,7 +273,11 @@ export class HardwallEngine {
     this.sun.shadow.camera.bottom = -span;
     this.sun.shadow.camera.updateProjectionMatrix();
     const diff = DIFFICULTIES[maze.difficulty];
-    this.scene.fog = new THREE.Fog(PALETTE.sky, diff.fogNear, Math.min(diff.fogFar, 96));
+    this.fogNear = diff.fogNear;
+    this.fogFar = Math.min(diff.fogFar, 96);
+    this.fogNearTarget = this.fogNear;
+    this.fogFarTarget = this.fogFar;
+    this.scene.fog = new THREE.Fog(PALETTE.sky, this.fogNear, this.fogFar);
     this.renderer.shadowMap.needsUpdate = true;
     this.syncCamera(0);
   }
@@ -248,6 +294,7 @@ export class HardwallEngine {
 
   private onClick(): void {
     if (runtime.phase !== "playing") return;
+    if (runtime.touchActive) return;
     if (document.pointerLockElement === this.canvas) return;
     const req = this.canvas.requestPointerLock as (
       opts?: PointerLockOptions,
@@ -268,7 +315,7 @@ export class HardwallEngine {
     const locked = document.pointerLockElement === this.canvas;
     runtime.pointerLocked = locked;
     useGame.getState().setPointerLocked(locked);
-    if (!locked && runtime.phase === "playing") {
+    if (!locked && runtime.phase === "playing" && !runtime.touchActive) {
       useGame.getState().pause();
     }
   }
@@ -307,15 +354,19 @@ export class HardwallEngine {
     const dt = Math.min((time - this.lastTime) / 1000, 0.1);
     this.lastTime = time;
     if (runtime.phase === "playing") {
-      this.acc += dt;
-      this.acc = Math.min(this.acc, 0.25);
-      while (this.acc >= FIXED_DT) {
-        this.fixedStep(FIXED_DT);
-        this.acc -= FIXED_DT;
+      if (runtime.hitstop > 0) {
+        runtime.hitstop = Math.max(0, runtime.hitstop - dt);
+      } else {
+        this.acc += dt;
+        this.acc = Math.min(this.acc, 0.25);
+        while (this.acc >= FIXED_DT) {
+          this.fixedStep(FIXED_DT);
+          this.acc -= FIXED_DT;
+        }
+        runtime.time += dt;
       }
-      runtime.time += dt;
       this.hudAcc += dt;
-      if (this.hudAcc >= 0.1) {
+      if (this.hudAcc >= 0.05) {
         this.hudAcc = 0;
         useGame.getState().syncHud();
       }
@@ -325,6 +376,9 @@ export class HardwallEngine {
     this.animatePickups(dt);
     this.animateWorld(dt);
     this.stepParticles(dt);
+    this.emitDashTrail(dt);
+    this.syncFog(dt);
+    this.syncCompass();
     this.syncExitGate();
     if (this.crystal) {
       this.crystal.rotation.y += dt * 1.3;
@@ -332,6 +386,40 @@ export class HardwallEngine {
     }
     this.syncCamera(dt);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private syncFog(dt: number): void {
+    const maze = runtime.maze;
+    if (!maze) return;
+    const diff = DIFFICULTIES[maze.difficulty];
+    const revealed = runtime.time < runtime.revealUntil;
+    const tar = runtime.onTar;
+    this.fogNearTarget = revealed ? Math.min(96, diff.fogNear * 1.85) : tar ? diff.fogNear * 0.55 : diff.fogNear;
+    this.fogFarTarget = revealed
+      ? Math.min(96, diff.fogFar * 1.65)
+      : tar
+        ? Math.min(96, diff.fogFar * 0.62)
+        : Math.min(96, diff.fogFar);
+    const k = 1 - Math.exp(-5.5 * dt);
+    this.fogNear += (this.fogNearTarget - this.fogNear) * k;
+    this.fogFar += (this.fogFarTarget - this.fogFar) * k;
+    const fog = this.scene.fog;
+    if (fog instanceof THREE.Fog) {
+      fog.near = this.fogNear;
+      fog.far = this.fogFar;
+    }
+  }
+
+  private syncCompass(): void {
+    const maze = runtime.maze;
+    const on = Boolean(maze) && runtime.time < runtime.compassUntil;
+    this.compassNeedle.visible = on && runtime.phase === "playing";
+    if (!on || !maze) return;
+    const e = cellCenter(maze.exit.cx, maze.exit.cz);
+    const dx = e.x - runtime.x;
+    const dz = e.z - runtime.z;
+    this.compassNeedle.position.set(runtime.x, 0.18, runtime.z);
+    this.compassNeedle.rotation.y = Math.atan2(-dx, -dz);
   }
 
   private syncExitGate(): void {
@@ -352,6 +440,7 @@ export class HardwallEngine {
     this.checkPickups();
     this.checkWarp();
     this.checkBoost();
+    this.checkTars();
     this.checkPops();
     this.checkDoors();
     this.checkExit();
@@ -422,13 +511,15 @@ export class HardwallEngine {
     const sprint =
       held("ShiftLeft") ||
       held("ShiftRight") ||
+      runtime.touchSprint ||
       (pad?.buttons[10]?.pressed ?? false) ||
       im > 0.95;
     const boosting = runtime.time < runtime.boostUntil;
     const padBoosting = runtime.time < runtime.padBoostUntil;
-    const maxS = padBoosting
+    let maxS = padBoosting
       ? PAD_BOOST_CAP
       : (sprint ? SPRINT_SPEED : WALK_SPEED) * (boosting ? DASH_MULT : 1);
+    if (runtime.onTar) maxS *= TAR_SLOW;
 
     const wishX = this.fwd.x * az + this.right.x * ax;
     const wishZ = this.fwd.z * az + this.right.z * ax;
@@ -442,7 +533,7 @@ export class HardwallEngine {
         runtime.vz *= maxS / s;
       }
     } else if (!padBoosting) {
-      const damp = Math.exp(-FRICTION * dt);
+      const damp = Math.exp(-FRICTION * (runtime.onTar ? dt * 1.8 : dt));
       runtime.vx *= damp;
       runtime.vz *= damp;
       if (Math.hypot(runtime.vx, runtime.vz) < 0.03) {
@@ -497,11 +588,11 @@ export class HardwallEngine {
       if (runtime.collected.has(p.id)) continue;
       const dx = runtime.x - p.x;
       const dz = runtime.z - p.z;
-      if (dx * dx + dz * dz > 0.7 * 0.7) continue;
+      if (dx * dx + dz * dz > 0.82 * 0.82) continue;
       runtime.collected.add(p.id);
       const mesh = this.world.pickups[p.id];
       if (mesh) mesh.visible = false;
-      this.burst(p.x, 0.8, p.z, p.kind);
+      this.burst(p.x, 0.8, p.z, p.kind, 18);
       this.applyPickup(p.kind);
       runtime.trauma = Math.min(1, runtime.trauma + 0.28);
       useGame.getState().collectOne();
@@ -509,18 +600,24 @@ export class HardwallEngine {
   }
 
   private applyPickup(kind: PickupKind): void {
+    const info = PICKUP_INFO[kind];
     if (kind === "dash") {
       runtime.boostUntil = runtime.time + DASH_TIME;
+      runtime.fovKick = Math.max(runtime.fovKick, 0.38);
+      pushToast(`${info.label}  ${DASH_TIME}s`, info.css);
       sfxDash();
       return;
     }
     if (kind === "reveal") {
       runtime.revealUntil = runtime.time + REVEAL_TIME;
+      this.revealMap();
+      pushToast(`${info.label}  ${REVEAL_TIME}s`, info.css);
       sfxReveal();
       return;
     }
     if (kind === "compass") {
       runtime.compassUntil = runtime.time + COMPASS_TIME;
+      pushToast(`${info.label}  ${COMPASS_TIME}s`, info.css);
       sfxCompass();
       return;
     }
@@ -530,11 +627,36 @@ export class HardwallEngine {
       if (tryOpenDoors()) {
         sfxDoor();
         runtime.trauma = Math.min(1, runtime.trauma + 0.22);
+        runtime.fovKick = Math.max(runtime.fovKick, 0.22);
+        this.burstDoors();
+        pushToast("GATE OPEN", "lime");
+      } else {
+        pushToast(`${info.label}  ${runtime.stamps}`, info.css);
       }
       return;
     }
     runtime.blocks += 1;
+    pushToast(`${info.label}  ${runtime.blocks}`, info.css);
     sfxPickup();
+  }
+
+  private revealMap(): void {
+    const maze = runtime.maze;
+    if (!maze) return;
+    for (let z = 0; z < maze.rows; z++) {
+      for (let x = 0; x < maze.cols; x++) {
+        markExplore(x, z);
+      }
+    }
+  }
+
+  private burstDoors(): void {
+    const maze = runtime.maze;
+    if (!maze) return;
+    for (const d of maze.doors) {
+      if (!runtime.openDoors.has(d.id)) continue;
+      this.burst(d.x, 1.4, d.z, "stamp", 16);
+    }
   }
 
   private checkWarp(): void {
@@ -558,17 +680,19 @@ export class HardwallEngine {
     if (!src) return;
     const dest = maze.teleporters.find((t) => t.id === src.pair);
     if (!dest) return;
-    this.burst(src.x, 0.9, src.z, "warp");
+    this.burst(src.x, 0.9, src.z, "warp", 22);
     runtime.x = dest.x;
     runtime.z = dest.z;
     runtime.vx = 0;
     runtime.vz = 0;
     runtime.lastWarp = dest.id;
-    runtime.fovKick = 0.42;
-    runtime.hop = 0.32;
-    runtime.trauma = Math.min(1, runtime.trauma + 0.32);
+    runtime.fovKick = 0.5;
+    runtime.hop = 0.38;
+    runtime.hitstop = 0.07;
+    runtime.trauma = Math.min(1, runtime.trauma + 0.36);
+    pushToast("WARP", "cyan");
     sfxWarp();
-    this.burst(dest.x, 0.9, dest.z, "warp");
+    this.burst(dest.x, 0.9, dest.z, "warp", 22);
   }
 
   private checkBoost(): void {
@@ -578,11 +702,11 @@ export class HardwallEngine {
     for (const b of maze.boosts) {
       const dx = runtime.x - b.x;
       const dz = runtime.z - b.z;
-      if (dx * dx + dz * dz > 0.7 * 0.7) continue;
+      if (dx * dx + dz * dz > 0.72 * 0.72) continue;
       key = `${b.cx},${b.cz}`;
       if (runtime.lastBoostKey === key) return;
       runtime.lastBoostKey = key;
-      runtime.padBoostUntil = runtime.time + 0.6;
+      runtime.padBoostUntil = runtime.time + 0.72;
       runtime.vx += b.dx * PAD_BOOST;
       runtime.vz += b.dz * PAD_BOOST;
       const s = Math.hypot(runtime.vx, runtime.vz);
@@ -590,11 +714,38 @@ export class HardwallEngine {
         runtime.vx *= PAD_BOOST_CAP / s;
         runtime.vz *= PAD_BOOST_CAP / s;
       }
-      runtime.trauma = Math.min(1, runtime.trauma + 0.12);
+      runtime.trauma = Math.min(1, runtime.trauma + 0.18);
+      runtime.fovKick = Math.max(runtime.fovKick, 0.32);
+      runtime.hop = Math.max(runtime.hop, 0.2);
+      this.burst(b.x, 0.45, b.z, "dash", 16);
+      pushToast("BOOST", "sun");
       sfxPad();
       return;
     }
     if (!key) runtime.lastBoostKey = "";
+  }
+
+  private checkTars(): void {
+    const maze = runtime.maze;
+    if (!maze) {
+      runtime.onTar = false;
+      return;
+    }
+    let on = false;
+    for (const t of maze.tars) {
+      const dx = runtime.x - t.x;
+      const dz = runtime.z - t.z;
+      if (dx * dx + dz * dz < 0.92 * 0.92) {
+        on = true;
+        break;
+      }
+    }
+    if (on && !runtime.onTar && runtime.time - runtime.lastTarSfx > 0.4) {
+      runtime.lastTarSfx = runtime.time;
+      sfxTar();
+      runtime.trauma = Math.min(1, runtime.trauma + 0.08);
+    }
+    runtime.onTar = on;
   }
 
   private checkPops(): void {
@@ -604,14 +755,27 @@ export class HardwallEngine {
       if (runtime.popped.has(orb.id)) continue;
       const dx = runtime.x - orb.x;
       const dz = runtime.z - orb.z;
-      if (dx * dx + dz * dz > 0.62 * 0.62) continue;
+      if (dx * dx + dz * dz > 0.68 * 0.68) continue;
       runtime.popped.add(orb.id);
       const mesh = this.world.pops[orb.id];
       if (mesh) mesh.visible = false;
-      this.burst(orb.x, 1.05, orb.z, "pop");
-      runtime.hop = Math.max(runtime.hop, 0.22);
-      runtime.trauma = Math.min(1, runtime.trauma + 0.2);
+      this.burst(orb.x, 1.05, orb.z, "pop", 20);
+      this.fwd.set(-Math.sin(runtime.yaw), 0, -Math.cos(runtime.yaw));
+      runtime.vx += this.fwd.x * POP_LAUNCH;
+      runtime.vz += this.fwd.z * POP_LAUNCH;
+      const s = Math.hypot(runtime.vx, runtime.vz);
+      if (s > PAD_BOOST_CAP) {
+        runtime.vx *= PAD_BOOST_CAP / s;
+        runtime.vz *= PAD_BOOST_CAP / s;
+      }
+      runtime.padBoostUntil = Math.max(runtime.padBoostUntil, runtime.time + 0.38);
+      runtime.hop = Math.max(runtime.hop, 0.42);
+      runtime.fovKick = Math.max(runtime.fovKick, 0.24);
+      runtime.trauma = Math.min(1, runtime.trauma + 0.22);
+      markExplore(orb.cx, orb.cz);
+      pushToast("POP  BOUNCE", "pink");
       sfxPop();
+      sfxBounce();
     }
   }
 
@@ -623,7 +787,13 @@ export class HardwallEngine {
       const dx = runtime.x - d.x;
       const dz = runtime.z - d.z;
       if (dx * dx + dz * dz > 1.55 * 1.55) continue;
-      runtime.doorHintUntil = runtime.time + 0.45;
+      runtime.doorHintUntil = runtime.time + 0.55;
+      if (runtime.speed > 1.1 && runtime.time - runtime.lastDoorBump > 0.45) {
+        runtime.lastDoorBump = runtime.time;
+        sfxLock();
+        runtime.trauma = Math.min(1, runtime.trauma + 0.16);
+        this.burst(d.x, 1.2, d.z, "stamp", 8);
+      }
     }
   }
 
@@ -645,6 +815,7 @@ export class HardwallEngine {
     }
     sfxWin();
     runtime.trauma = 0.7;
+    this.burst(e.x, 1.2, e.z, "compass", 28);
     useGame.getState().win();
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
   }
@@ -652,12 +823,30 @@ export class HardwallEngine {
   private animatePickups(dt: number): void {
     if (!this.world) return;
     const t = runtime.time;
+    const revealed = t < runtime.revealUntil;
     for (const mesh of this.world.pickups) {
       if (!mesh.visible) continue;
       const phase = mesh.userData.phase as number;
       mesh.position.y = 0.72 + Math.sin(t * 2.4 + phase) * 0.12;
-      mesh.rotation.y += dt * 1.35;
-      mesh.rotation.x = Math.sin(t * 1.1 + phase) * 0.18;
+      const spin = mesh.userData.spinRoot as THREE.Object3D | undefined;
+      if (spin) {
+        spin.rotation.y += dt * 1.55;
+        spin.rotation.x = Math.sin(t * 1.1 + phase) * 0.18;
+      } else {
+        mesh.rotation.y += dt * 1.35;
+        mesh.rotation.x = Math.sin(t * 1.1 + phase) * 0.18;
+      }
+      const label = mesh.userData.label as THREE.Object3D | undefined;
+      if (label) {
+        label.quaternion.copy(this.camera.quaternion);
+        label.position.y = 0.62 + Math.sin(t * 3 + phase) * 0.04;
+      }
+      const inner = mesh.userData.inner as THREE.Mesh | undefined;
+      if (inner && inner.material instanceof THREE.MeshLambertMaterial) {
+        inner.material.emissiveIntensity = revealed
+          ? 0.7 + Math.sin(t * 8) * 0.2
+          : 0.32;
+      }
     }
   }
 
@@ -673,6 +862,8 @@ export class HardwallEngine {
       if (!mesh.visible) continue;
       const phase = (mesh.userData.phase as number) || 0;
       mesh.position.y = 1.05 + Math.sin(t * 2.6 + phase) * 0.1;
+      const label = mesh.userData.label as THREE.Object3D | undefined;
+      if (label) label.quaternion.copy(this.camera.quaternion);
     }
     for (const g of this.world.doors) {
       const id = g.userData.doorId as number;
@@ -681,34 +872,80 @@ export class HardwallEngine {
       g.position.y += (target - g.position.y) * Math.min(1, dt * 5.5);
       g.visible = g.position.y < 3.35;
     }
+    for (const g of this.world.boosts) {
+      const pulse = 0.08 + (Math.sin(t * 9) * 0.5 + 0.5) * 0.22;
+      g.position.y = pulse;
+    }
+    for (const g of this.world.warps) {
+      const s = 1 + Math.sin(t * 5.2) * 0.06;
+      g.scale.setScalar(s);
+      const label = g.userData.label as THREE.Object3D | undefined;
+      if (label) label.quaternion.copy(this.camera.quaternion);
+    }
+    for (const g of this.world.tars) {
+      const label = g.userData.label as THREE.Object3D | undefined;
+      if (label) label.quaternion.copy(this.camera.quaternion);
+    }
+    const boosting = runtime.time < runtime.boostUntil;
     if (!runtime.reducedMotion) {
-      const want = 78 + runtime.fovKick * 24;
+      const want = 78 + runtime.fovKick * 24 + (boosting ? 9 : 0) - (runtime.onTar ? 6 : 0);
       if (Math.abs(this.camera.fov - want) > 0.05) {
-        this.camera.fov = want;
+        this.camera.fov += (want - this.camera.fov) * Math.min(1, dt * 8);
         this.camera.updateProjectionMatrix();
       }
       runtime.fovKick = Math.max(0, runtime.fovKick - dt * 1.7);
     }
   }
 
-  private burst(x: number, y: number, z: number, kind: PickupKind | "pop" | "warp"): void {
+  private emitDashTrail(dt: number): void {
+    if (runtime.phase !== "playing") return;
+    if (runtime.time >= runtime.boostUntil) return;
+    if (runtime.reducedMotion) return;
+    if (runtime.speed < 1) return;
+    this.trailAcc += dt;
+    if (this.trailAcc < 0.045) return;
+    this.trailAcc = 0;
+    const mesh = this.allocParticle(PALETTE.cyan);
+    mesh.position.set(
+      runtime.x + (Math.random() - 0.5) * 0.2,
+      0.55 + Math.random() * 0.4,
+      runtime.z + (Math.random() - 0.5) * 0.2,
+    );
+    mesh.visible = true;
+    mesh.scale.setScalar(0.85);
+    this.particles.push({
+      mesh,
+      vx: -this.fwd.x * 1.4,
+      vy: 0.4,
+      vz: -this.fwd.z * 1.4,
+      life: 0.28,
+    });
+  }
+
+  private burst(
+    x: number,
+    y: number,
+    z: number,
+    kind: PickupKind | "pop" | "warp",
+    count = 14,
+  ): void {
     const color =
       kind === "pop"
         ? PALETTE.pink
         : kind === "warp"
           ? PALETTE.cyan
-          : (KIND_COLOR[kind] ?? PALETTE.sun);
-    for (let i = 0; i < 14; i++) {
+          : (PICKUP_INFO[kind]?.color ?? PALETTE.sun);
+    for (let i = 0; i < count; i++) {
       const mesh = this.allocParticle(color);
       mesh.position.set(x, y, z);
       mesh.visible = true;
       mesh.scale.setScalar(1);
       this.particles.push({
         mesh,
-        vx: (Math.random() - 0.5) * 4.2,
-        vy: Math.random() * 3.4 + 1.2,
-        vz: (Math.random() - 0.5) * 4.2,
-        life: 0.45 + Math.random() * 0.25,
+        vx: (Math.random() - 0.5) * 4.6,
+        vy: Math.random() * 3.6 + 1.2,
+        vz: (Math.random() - 0.5) * 4.6,
+        life: 0.45 + Math.random() * 0.28,
       });
     }
   }
@@ -748,7 +985,7 @@ export class HardwallEngine {
     let x = runtime.x;
     let z = runtime.z;
     if (runtime.hop > 0 && !runtime.reducedMotion) {
-      y += runtime.hop * 0.5;
+      y += Math.sin(Math.min(1, runtime.hop) * Math.PI) * 0.42;
       runtime.hop = Math.max(0, runtime.hop - dt * 2.4);
     }
     const maze = runtime.maze;

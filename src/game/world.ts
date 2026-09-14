@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { CELL, PALETTE, WALL_H, WALL_T } from "./constants";
 import type { MazeData, PickupKind, PickupSpec } from "./maze";
 import { cellCenter, isCourtyardCell, openDoorsOf } from "./maze";
+import { PICKUP_INFO } from "./pickups";
 
 export type WorldHandle = {
   group: THREE.Group;
@@ -11,6 +12,9 @@ export type WorldHandle = {
   exitLock: THREE.Object3D | null;
   doors: THREE.Object3D[];
   spinners: THREE.Object3D[];
+  boosts: THREE.Object3D[];
+  warps: THREE.Object3D[];
+  tars: THREE.Object3D[];
   dispose: () => void;
 };
 
@@ -125,6 +129,7 @@ export function buildWorld(maze: MazeData): WorldHandle {
       else if (x === maze.exit.cx && z === maze.exit.cz) color = PALETTE.lime;
       else if (maze.teleporters.some((t) => t.cx === x && t.cz === z)) color = PALETTE.cyan;
       else if (maze.boosts.some((t) => t.cx === x && t.cz === z)) color = PALETTE.sun;
+      else if (maze.tars.some((t) => t.cx === x && t.cz === z)) color = PALETTE.ink;
       else if (
         maze.courtyards.some(
           (y) => x >= y.cx && x <= y.cx + 1 && z >= y.cz && z <= y.cz + 1,
@@ -266,13 +271,28 @@ export function buildWorld(maze: MazeData): WorldHandle {
   group.add(exitGroup);
 
   const pickups: THREE.Object3D[] = [];
-  maze.pickups.forEach((p) => pickups.push(makePickup(p, trackGeo, trackMat)));
+  maze.pickups.forEach((p) => pickups.push(makePickup(p, trackGeo, trackMat, textures)));
   pickups.forEach((m) => group.add(m));
 
   const doors: THREE.Object3D[] = [];
   const spinners: THREE.Object3D[] = [];
   const pops: THREE.Object3D[] = [];
-  decorateInterior(maze, group, doors, spinners, pops, trackGeo, trackMat, textures);
+  const boosts: THREE.Object3D[] = [];
+  const warps: THREE.Object3D[] = [];
+  const tars: THREE.Object3D[] = [];
+  decorateInterior(
+    maze,
+    group,
+    doors,
+    spinners,
+    pops,
+    boosts,
+    warps,
+    tars,
+    trackGeo,
+    trackMat,
+    textures,
+  );
 
   const skyline = buildSkyline(originX, originZ, maze, trackGeo, trackMat);
   group.add(skyline);
@@ -288,6 +308,9 @@ export function buildWorld(maze: MazeData): WorldHandle {
     exitLock: lock,
     doors,
     spinners,
+    boosts,
+    warps,
+    tars,
     dispose: () => {
       group.removeFromParent();
       for (const g of geos) g.dispose();
@@ -298,17 +321,14 @@ export function buildWorld(maze: MazeData): WorldHandle {
 }
 
 function pickupColor(kind: PickupKind): number {
-  if (kind === "dash") return PALETTE.cyan;
-  if (kind === "reveal") return PALETTE.pink;
-  if (kind === "compass") return PALETTE.lime;
-  if (kind === "stamp") return PALETTE.cream;
-  return PALETTE.sun;
+  return PICKUP_INFO[kind].color;
 }
 
 function makePickup(
   spec: PickupSpec,
   trackGeo: (g: THREE.BufferGeometry) => THREE.BufferGeometry,
   trackMat: <T extends THREE.Material>(m: T) => T,
+  textures: THREE.Texture[],
 ): THREE.Object3D {
   const wrap = new THREE.Group();
   wrap.position.set(spec.x, 0.72, spec.z);
@@ -316,16 +336,18 @@ function makePickup(
   wrap.userData.kind = spec.kind;
   wrap.userData.phase = spec.id * 0.9;
 
+  const info = PICKUP_INFO[spec.kind];
   const color = pickupColor(spec.kind);
   const ink = trackMat(new THREE.MeshBasicMaterial({ color: PALETTE.ink }));
   const fill = trackMat(
     new THREE.MeshLambertMaterial({
       color,
       emissive: color,
-      emissiveIntensity: 0.22,
+      emissiveIntensity: 0.32,
     }),
   );
 
+  const spin = new THREE.Group();
   let inner: THREE.Mesh;
   let shell: THREE.Mesh;
   if (spec.kind === "dash") {
@@ -350,8 +372,34 @@ function makePickup(
     inner = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.4, 0.4, 0.4)), fill);
   }
   inner.castShadow = true;
-  wrap.add(shell, inner);
+  spin.add(shell, inner);
+  wrap.add(spin);
+  wrap.userData.spinRoot = spin;
   wrap.userData.inner = inner;
+
+  const disc = new THREE.Mesh(
+    trackGeo(new THREE.CylinderGeometry(0.42, 0.42, 0.05, 8)),
+    trackMat(
+      new THREE.MeshLambertMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 0.45,
+      }),
+    ),
+  );
+  disc.position.y = -0.68;
+  wrap.add(disc);
+
+  const tagTex = makeSignTexture(info.label, info.hex);
+  textures.push(tagTex);
+  const label = new THREE.Mesh(
+    trackGeo(new THREE.PlaneGeometry(0.95, 0.34)),
+    trackMat(new THREE.MeshBasicMaterial({ map: tagTex, toneMapped: false, transparent: true })),
+  );
+  label.position.y = 0.62;
+  wrap.add(label);
+  wrap.userData.label = label;
+
   return wrap;
 }
 
@@ -363,6 +411,9 @@ function decorateInterior(
   doors: THREE.Object3D[],
   spinners: THREE.Object3D[],
   pops: THREE.Object3D[],
+  boosts: THREE.Object3D[],
+  warps: THREE.Object3D[],
+  tars: THREE.Object3D[],
   trackGeo: (g: THREE.BufferGeometry) => THREE.BufferGeometry,
   trackMat: <T extends THREE.Material>(m: T) => T,
   textures: THREE.Texture[],
@@ -540,7 +591,7 @@ function decorateInterior(
         new THREE.MeshLambertMaterial({
           color: hue,
           emissive: hue,
-          emissiveIntensity: 0.28,
+          emissiveIntensity: 0.38,
         }),
       ),
     );
@@ -551,39 +602,93 @@ function decorateInterior(
         new THREE.MeshLambertMaterial({
           color: PALETTE.ink,
           emissive: hue,
-          emissiveIntensity: 0.18,
+          emissiveIntensity: 0.22,
         }),
       ),
     );
     hoop.rotation.x = Math.PI / 2;
     hoop.position.y = 0.95;
-    hoop.userData.spinY = 1.6;
+    hoop.userData.spinY = 1.8;
     const core = new THREE.Mesh(
       trackGeo(new THREE.BoxGeometry(0.22, 0.22, 0.22)),
       trackMat(
         new THREE.MeshLambertMaterial({
           color: PALETTE.sun,
           emissive: PALETTE.sun,
-          emissiveIntensity: 0.4,
+          emissiveIntensity: 0.5,
         }),
       ),
     );
     core.position.y = 0.95;
-    core.userData.spinY = -2.1;
-    g.add(ring, hoop, core);
+    core.userData.spinY = -2.4;
+    const tagTex = makeSignTexture("WARP", "#00D4E8");
+    textures.push(tagTex);
+    const tag = new THREE.Mesh(
+      trackGeo(new THREE.PlaneGeometry(0.9, 0.32)),
+      trackMat(new THREE.MeshBasicMaterial({ map: tagTex, toneMapped: false })),
+    );
+    tag.position.y = 1.55;
+    g.add(ring, hoop, core, tag);
+    g.userData.label = tag;
     spinners.push(hoop, core);
+    warps.push(g);
     group.add(g);
   }
 
   for (const pad of maze.boosts) {
     const g = new THREE.Group();
     g.position.set(pad.x, 0.08, pad.z);
-    const yaw = Math.atan2(pad.dx, pad.dz);
-    g.rotation.y = yaw;
+    // Arrow mesh points toward local −Z; rotate so −Z matches (dx, dz).
+    g.rotation.y = Math.atan2(pad.dx, pad.dz) + Math.PI;
     const chev = boxMesh(0.55, 0.08, 0.85, PALETTE.sun);
-    const tip = boxMesh(0.32, 0.1, 0.32, PALETTE.ink);
-    tip.position.set(0, 0.02, -0.42);
-    g.add(chev, tip);
+    const tip = boxMesh(0.32, 0.12, 0.32, PALETTE.ink);
+    tip.position.set(0, 0.04, -0.48);
+    const pulse = boxMesh(0.38, 0.06, 0.38, PALETTE.cyan);
+    pulse.position.set(0, 0.06, 0.12);
+    pulse.userData.boostPulse = true;
+    g.add(chev, tip, pulse);
+    g.userData.dx = pad.dx;
+    g.userData.dz = pad.dz;
+    boosts.push(g);
+    group.add(g);
+  }
+
+  for (const tar of maze.tars) {
+    const g = new THREE.Group();
+    g.position.set(tar.x, 0, tar.z);
+    const puddle = new THREE.Mesh(
+      trackGeo(new THREE.CylinderGeometry(0.95, 1.05, 0.08, 8)),
+      trackMat(
+        new THREE.MeshLambertMaterial({
+          color: PALETTE.ink,
+          emissive: PALETTE.pink,
+          emissiveIntensity: 0.18,
+        }),
+      ),
+    );
+    puddle.position.y = 0.06;
+    const rim = new THREE.Mesh(
+      trackGeo(new THREE.TorusGeometry(0.92, 0.05, 6, 8)),
+      trackMat(
+        new THREE.MeshLambertMaterial({
+          color: PALETTE.pink,
+          emissive: PALETTE.pink,
+          emissiveIntensity: 0.3,
+        }),
+      ),
+    );
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.1;
+    const tagTex = makeSignTexture("TAR", "#FF5A8A");
+    textures.push(tagTex);
+    const tag = new THREE.Mesh(
+      trackGeo(new THREE.PlaneGeometry(0.72, 0.26)),
+      trackMat(new THREE.MeshBasicMaterial({ map: tagTex, toneMapped: false })),
+    );
+    tag.position.y = 0.42;
+    g.add(puddle, rim, tag);
+    g.userData.label = tag;
+    tars.push(g);
     group.add(g);
   }
 
@@ -607,7 +712,16 @@ function decorateInterior(
     );
     tag.position.set(0, 2.55, 0.12);
     g.add(tag);
+    const needTex = makeSignTexture(`×${door.need}`, "#FFF8E7");
+    textures.push(needTex);
+    const need = new THREE.Mesh(
+      trackGeo(new THREE.PlaneGeometry(0.85, 0.3)),
+      trackMat(new THREE.MeshBasicMaterial({ map: needTex, toneMapped: false })),
+    );
+    need.position.set(0, 1.55, 0.14);
+    g.add(need);
     g.userData.doorId = door.id;
+    g.userData.need = door.need;
     doors.push(g);
     group.add(g);
   }
@@ -630,13 +744,21 @@ function decorateInterior(
         new THREE.MeshLambertMaterial({
           color: hue,
           emissive: hue,
-          emissiveIntensity: 0.32,
+          emissiveIntensity: 0.4,
         }),
       ),
     );
     inner.castShadow = true;
-    wrap.add(shell, inner);
-    wrap.userData.spinY = 0.9;
+    const tagTex = makeSignTexture("POP", "#FF5A8A");
+    textures.push(tagTex);
+    const tag = new THREE.Mesh(
+      trackGeo(new THREE.PlaneGeometry(0.7, 0.26)),
+      trackMat(new THREE.MeshBasicMaterial({ map: tagTex, toneMapped: false })),
+    );
+    tag.position.y = 0.52;
+    wrap.add(shell, inner, tag);
+    wrap.userData.spinY = 1.15;
+    wrap.userData.label = tag;
     pops.push(wrap);
     spinners.push(wrap);
     group.add(wrap);

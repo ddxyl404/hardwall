@@ -19,7 +19,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "第一人称低多边形迷宫。收集色块，找到出口。",
+        content: "第一人称低多边形迷宫。收集色块，贴章开闸，找到出口。支持触摸。",
       },
       { name: "theme-color", content: "#FFE500" },
     ],

@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { LOOK_KEY, LOOK_KEY_LEGACY, SETTINGS_KEY } from "./constants";
 import type { DifficultyId } from "./difficulty";
-import { runtime } from "./runtime";
+import type { ToastTone } from "./pickups";
+import { nextDoorNeed, runtime } from "./runtime";
 import { setMuted as setAudioMuted } from "./audio";
 
 export function formatTime(s: number): string {
@@ -106,6 +107,13 @@ type GameState = {
   compassLeft: number;
   lockHint: boolean;
   doorHint: boolean;
+  onTar: boolean;
+  toastLabel: string;
+  toastTone: ToastTone;
+  toastLeft: number;
+  flashTone: ToastTone | "ink";
+  flashLeft: number;
+  touchActive: boolean;
   setMenuPage: (page: MenuPage) => void;
   setPausePage: (page: PausePage) => void;
   setDifficulty: (id: DifficultyId) => void;
@@ -154,6 +162,13 @@ export const useGame = create<GameState>((set, get) => ({
   compassLeft: 0,
   lockHint: false,
   doorHint: false,
+  onTar: false,
+  toastLabel: "",
+  toastTone: "sun",
+  toastLeft: 0,
+  flashTone: "sun",
+  flashLeft: 0,
+  touchActive: false,
   setMenuPage: (page) => set({ menuPage: page }),
   setPausePage: (page) => set({ pausePage: page }),
   setDifficulty: (id) => {
@@ -177,7 +192,7 @@ export const useGame = create<GameState>((set, get) => ({
       total,
       stamps: 0,
       stampTotal: maze?.totalStamps ?? 0,
-      doorNeed: maze?.doors[0]?.need ?? 0,
+      doorNeed: nextDoorNeed(),
       seed,
       difficulty,
       pointerLocked: false,
@@ -186,6 +201,11 @@ export const useGame = create<GameState>((set, get) => ({
       compassLeft: 0,
       lockHint: false,
       doorHint: false,
+      onTar: false,
+      toastLabel: "",
+      toastLeft: 0,
+      flashLeft: 0,
+      touchActive: runtime.touchActive,
     });
     persistFrom(get);
   },
@@ -233,7 +253,16 @@ export const useGame = create<GameState>((set, get) => ({
     });
   },
   collectOne: () => {
-    set({ collected: runtime.blocks, stamps: runtime.stamps });
+    set({
+      collected: runtime.blocks,
+      stamps: runtime.stamps,
+      doorNeed: nextDoorNeed(),
+      toastLabel: runtime.toastLabel,
+      toastTone: runtime.toastTone,
+      toastLeft: Math.max(0, runtime.toastUntil - runtime.time),
+      flashTone: runtime.flashTone,
+      flashLeft: Math.max(0, runtime.flashUntil - runtime.time),
+    });
   },
   syncHud: () => {
     const now = runtime.time;
@@ -241,12 +270,20 @@ export const useGame = create<GameState>((set, get) => ({
       time: now,
       collected: runtime.blocks,
       stamps: runtime.stamps,
+      doorNeed: nextDoorNeed(),
       pointerLocked: runtime.pointerLocked,
       boostLeft: Math.max(0, runtime.boostUntil - now),
       revealLeft: Math.max(0, runtime.revealUntil - now),
       compassLeft: Math.max(0, runtime.compassUntil - now),
       lockHint: now < runtime.lockHintUntil,
       doorHint: now < runtime.doorHintUntil,
+      onTar: runtime.onTar,
+      toastLabel: runtime.toastLabel,
+      toastTone: runtime.toastTone,
+      toastLeft: Math.max(0, runtime.toastUntil - now),
+      flashTone: runtime.flashTone,
+      flashLeft: Math.max(0, runtime.flashUntil - now),
+      touchActive: runtime.touchActive,
     });
   },
   toggleMute: () => {
