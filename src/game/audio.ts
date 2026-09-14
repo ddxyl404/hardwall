@@ -80,6 +80,51 @@ export function sfxPickup(): void {
   beep(783.99, 0.14, "triangle", 0.05);
 }
 
+export function sfxDash(): void {
+  beep(220, 0.08, "square", 0.05, 2.2);
+  beep(440, 0.16, "triangle", 0.045, 1.8);
+}
+
+export function sfxReveal(): void {
+  beep(392, 0.1, "triangle", 0.045);
+  beep(988, 0.18, "square", 0.04);
+}
+
+export function sfxCompass(): void {
+  beep(523.25, 0.1, "triangle", 0.045);
+  beep(784, 0.2, "square", 0.04, 0.7);
+}
+
+export function sfxStamp(): void {
+  beep(349.23, 0.07, "square", 0.05);
+  beep(440, 0.12, "triangle", 0.045, 1.4);
+}
+
+export function sfxWarp(): void {
+  beep(180, 0.08, "sawtooth", 0.04, 3.4);
+  beep(720, 0.22, "triangle", 0.05, 0.35);
+}
+
+export function sfxDoor(): void {
+  beep(140, 0.12, "square", 0.05, 1.8);
+  beep(220, 0.2, "triangle", 0.04, 2.2);
+}
+
+export function sfxPad(): void {
+  beep(260, 0.06, "square", 0.04, 2.6);
+  beep(520, 0.12, "triangle", 0.035, 1.7);
+}
+
+export function sfxPop(): void {
+  beep(640, 0.05, "square", 0.045, 0.4);
+  beep(180, 0.12, "sine", 0.05, 0.35);
+}
+
+export function sfxLock(): void {
+  beep(180, 0.09, "square", 0.05, 0.45);
+  beep(110, 0.14, "sine", 0.05, 0.5);
+}
+
 export function sfxWin(): void {
   beep(392, 0.16, "square", 0.05);
   window.setTimeout(() => beep(523.25, 0.16, "square", 0.05), 90);

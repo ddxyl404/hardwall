@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { COLS, ROWS } from "./constants";
 import { unlockAudio } from "./audio";
-import { Crosshair, Hud } from "./Hud";
 import { generateMaze } from "./maze";
+import { Crosshair, Hud } from "./Hud";
 import { PauseScreen, StartScreen, WinScreen } from "./Overlays";
 import { loadRuntime } from "./runtime";
 import { useGame } from "./store";
@@ -15,12 +14,13 @@ export function GameApp() {
 
   const begin = () => {
     unlockAudio();
+    const difficulty = useGame.getState().difficulty;
     const seed =
       (Math.floor(performance.now() * 1000) ^ ((Math.random() * 0xffffffff) >>> 0)) >>>
       0;
-    const maze = generateMaze(COLS, ROWS, seed);
+    const maze = generateMaze(seed, difficulty);
     loadRuntime(maze);
-    useGame.getState().startGame(maze.pickups.length, seed);
+    useGame.getState().startGame(maze.totalBlocks, seed, difficulty);
     setSession((n) => n + 1);
   };
 
@@ -43,7 +43,7 @@ export function GameApp() {
   };
 
   useEffect(() => {
-    useGame.getState().hydrateBest();
+    useGame.getState().hydrate();
   }, []);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ export function GameApp() {
 
       {phase === "menu" && <StartScreen onPlay={begin} />}
       {phase === "paused" && <PauseScreen onResume={resume} onQuit={quit} />}
-      {phase === "won" && <WinScreen onReplay={begin} />}
+      {phase === "won" && <WinScreen onReplay={begin} onMenu={quit} />}
     </div>
   );
 }

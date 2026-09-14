@@ -8,9 +8,21 @@ export const PALETTE = {
   lime: 0xc6f000,
   sky: 0x7ed9ff,
   floor: 0xf3e4b8,
+  cream: 0xffefc2,
   white: 0xfffdf5,
   grout: 0x111111,
 } as const;
+
+export const WALL_FILLS = [
+  PALETTE.paper,
+  PALETTE.paper,
+  PALETTE.cream,
+  PALETTE.cream,
+  PALETTE.sun,
+  PALETTE.cyan,
+  PALETTE.pink,
+  PALETTE.lime,
+] as const;
 
 export const CELL = 3.6;
 export const WALL_H = 3.35;
@@ -24,8 +36,7 @@ export const FRICTION = 11;
 export const MOUSE_SENS = 0.00215;
 export const TOUCH_LOOK_SENS = 0.0034;
 export const GAMEPAD_LOOK = 2.35;
-export const COLS = 13;
-export const ROWS = 13;
-export const PICKUP_COUNT = 8;
 export const FIXED_DT = 1 / 60;
-export const LOOK_KEY = "hardwall-best-v1";
+export const LOOK_KEY = "hardwall-best-v2";
+export const LOOK_KEY_LEGACY = "hardwall-best-v1";
+export const SETTINGS_KEY = "hardwall-settings-v1";

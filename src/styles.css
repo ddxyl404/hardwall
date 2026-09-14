@@ -11,6 +11,7 @@
   --color-lime: #c6f000;
   --color-sky: #7ed9ff;
   --color-floor: #f3e4b8;
+  --color-cream: #ffefc2;
 
   --font-sans: "Space Grotesk Variable", "Space Grotesk", "PingFang SC",
     "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -147,6 +148,39 @@
   letter-spacing: 0.16em;
   color: var(--color-ink);
   box-shadow: 3px 3px 0 0 var(--color-ink);
+}
+
+.ring-select {
+  outline: 3px solid var(--color-ink);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-brutal);
+}
+
+.slider-brutal {
+  display: block;
+  width: 100%;
+  height: 14px;
+  appearance: none;
+  border: 3px solid var(--color-ink);
+  background: var(--color-sun);
+  box-shadow: var(--shadow-brutal-sm);
+}
+
+.slider-brutal::-webkit-slider-thumb {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--color-ink);
+  background: var(--color-pink);
+  box-shadow: 2px 2px 0 0 var(--color-ink);
+}
+
+.slider-brutal::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--color-ink);
+  background: var(--color-pink);
+  box-shadow: 2px 2px 0 0 var(--color-ink);
 }
 
 .confetti-bit {

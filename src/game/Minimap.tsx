@@ -66,12 +66,31 @@ function paint(ctx: CanvasRenderingContext2D) {
     ctx.stroke();
   }
 
+  const revealed = runtime.time < runtime.revealUntil;
+  const seen = (x: number, z: number) =>
+    revealed || Boolean(runtime.visited[z * maze.cols + x]);
+
   for (let z = 0; z < maze.rows; z++) {
     for (let x = 0; x < maze.cols; x++) {
-      if (!runtime.visited[z * maze.cols + x]) continue;
+      if (!seen(x, z)) continue;
       const isStart = x === maze.start.cx && z === maze.start.cz;
       const isExit = x === maze.exit.cx && z === maze.exit.cz;
-      ctx.fillStyle = isExit ? "#C6F000" : isStart ? "#FFE500" : "#F3E4B8";
+      const isYard = maze.courtyards.some(
+        (y) => x >= y.cx && x <= y.cx + 1 && z >= y.cz && z <= y.cz + 1,
+      );
+      const isWarp = maze.teleporters.some((t) => t.cx === x && t.cz === z);
+      const isBoost = maze.boosts.some((t) => t.cx === x && t.cz === z);
+      ctx.fillStyle = isExit
+        ? "#C6F000"
+        : isStart
+          ? "#FFE500"
+          : isWarp
+            ? "#00D4E8"
+            : isBoost
+              ? "#FFE500"
+              : isYard
+                ? "#FFEFC2"
+                : "#F3E4B8";
       ctx.fillRect(ox + x * cw + 1, oy + z * ch + 1, cw - 2, ch - 2);
     }
   }
@@ -82,23 +101,25 @@ function paint(ctx: CanvasRenderingContext2D) {
   ctx.beginPath();
   for (let z = 0; z < maze.rows; z++) {
     for (let x = 0; x < maze.cols; x++) {
-      const here = runtime.visited[z * maze.cols + x];
+      const here = seen(x, z);
       const cell = maze.cellWalls[z]![x]!;
       const x0 = ox + x * cw;
       const y0 = oy + z * ch;
       const showN =
         cell.n &&
-        (here || (z > 0 && runtime.visited[(z - 1) * maze.cols + x]));
+        (here || revealed || (z > 0 && runtime.visited[(z - 1) * maze.cols + x]));
       const showW =
         cell.w &&
-        (here || (x > 0 && runtime.visited[z * maze.cols + (x - 1)]));
+        (here || revealed || (x > 0 && runtime.visited[z * maze.cols + (x - 1)]));
       const showS =
         cell.s &&
         (here ||
+          revealed ||
           (z + 1 < maze.rows && runtime.visited[(z + 1) * maze.cols + x]));
       const showE =
         cell.e &&
         (here ||
+          revealed ||
           (x + 1 < maze.cols && runtime.visited[z * maze.cols + (x + 1)]));
       if (showN) {
         ctx.moveTo(x0, y0);
@@ -120,10 +141,39 @@ function paint(ctx: CanvasRenderingContext2D) {
   }
   ctx.stroke();
 
+  for (const d of maze.doors) {
+    const ax = d.dir === "e" ? d.cx : d.cx;
+    const az = d.dir === "s" ? d.cz : d.cz;
+    const bx = d.dir === "e" ? d.cx + 1 : d.cx;
+    const bz = d.dir === "s" ? d.cz + 1 : d.cz;
+    if (!seen(ax, az) && !seen(Math.min(bx, maze.cols - 1), Math.min(bz, maze.rows - 1))) {
+      continue;
+    }
+    const x0 = ox + d.cx * cw;
+    const y0 = oy + d.cz * ch;
+    ctx.strokeStyle = runtime.openDoors.has(d.id) ? "#C6F000" : "#FF5A8A";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (d.dir === "e") {
+      ctx.moveTo(x0 + cw, y0 + 2);
+      ctx.lineTo(x0 + cw, y0 + ch - 2);
+    } else {
+      ctx.moveTo(x0 + 2, y0 + ch);
+      ctx.lineTo(x0 + cw - 2, y0 + ch);
+    }
+    ctx.stroke();
+  }
+
   for (const p of maze.pickups) {
     if (runtime.collected.has(p.id)) continue;
-    if (!runtime.visited[p.cz * maze.cols + p.cx]) continue;
-    const colors = ["#FFE500", "#00D4E8", "#FF5A8A"];
+    if (!seen(p.cx, p.cz)) continue;
+    const colors: Record<string, string> = {
+      block: "#FFE500",
+      dash: "#00D4E8",
+      reveal: "#FF5A8A",
+      compass: "#C6F000",
+      stamp: "#FFEFC2",
+    };
     ctx.fillStyle = colors[p.kind] ?? "#FFE500";
     ctx.strokeStyle = "#111111";
     ctx.lineWidth = 1.5;
@@ -134,6 +184,18 @@ function paint(ctx: CanvasRenderingContext2D) {
       cw * 0.3,
       ch * 0.3,
     );
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  for (const orb of maze.pops) {
+    if (runtime.popped.has(orb.id)) continue;
+    if (!seen(orb.cx, orb.cz)) continue;
+    ctx.fillStyle = "#FF5A8A";
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(ox + (orb.cx + 0.5) * cw, oy + (orb.cz + 0.5) * ch, cw * 0.16, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }

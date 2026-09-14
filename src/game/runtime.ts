@@ -1,5 +1,6 @@
 import { CELL, EYE } from "./constants";
-import type { MazeData } from "./maze";
+import type { DifficultyId } from "./difficulty";
+import type { Aabb, MazeData } from "./maze";
 import { cellCenter, spawnYaw, worldToCell } from "./maze";
 
 export type ControlsProbe = {
@@ -31,6 +32,14 @@ export type Runtime = {
   vz: number;
   speed: number;
   collected: Set<number>;
+  blocks: number;
+  stamps: number;
+  popped: Set<number>;
+  openDoors: Set<number>;
+  aabbs: Aabb[];
+  lastWarp: number;
+  lastBoostKey: string;
+  padBoostUntil: number;
   visited: Uint8Array;
   time: number;
   keys: Set<string>;
@@ -39,6 +48,7 @@ export type Runtime = {
   touchY: number;
   lookAX: number;
   lookAY: number;
+  lookSens: number;
   pointerLocked: boolean;
   muted: boolean;
   trauma: number;
@@ -48,6 +58,15 @@ export type Runtime = {
   reducedMotion: boolean;
   lastBump: number;
   lastFoot: number;
+  lastLockNudge: number;
+  boostUntil: number;
+  revealUntil: number;
+  compassUntil: number;
+  lockHintUntil: number;
+  doorHintUntil: number;
+  hop: number;
+  fovKick: number;
+  difficulty: DifficultyId;
 };
 
 export const runtime: Runtime = {
@@ -62,6 +81,14 @@ export const runtime: Runtime = {
   vz: 0,
   speed: 0,
   collected: new Set(),
+  blocks: 0,
+  stamps: 0,
+  popped: new Set(),
+  openDoors: new Set(),
+  aabbs: [],
+  lastWarp: -1,
+  lastBoostKey: "",
+  padBoostUntil: 0,
   visited: new Uint8Array(0),
   time: 0,
   keys: new Set(),
@@ -70,6 +97,7 @@ export const runtime: Runtime = {
   touchY: 0,
   lookAX: 0,
   lookAY: 0,
+  lookSens: 1,
   pointerLocked: false,
   muted: false,
   trauma: 0,
@@ -79,11 +107,21 @@ export const runtime: Runtime = {
   reducedMotion: false,
   lastBump: 0,
   lastFoot: 0,
+  lastLockNudge: 0,
+  boostUntil: 0,
+  revealUntil: 0,
+  compassUntil: 0,
+  lockHintUntil: 0,
+  doorHintUntil: 0,
+  hop: 0,
+  fovKick: 0,
+  difficulty: "hard",
 };
 
 export function loadRuntime(maze: MazeData): void {
   const spawn = cellCenter(maze.start.cx, maze.start.cz);
   runtime.maze = maze;
+  runtime.difficulty = maze.difficulty;
   runtime.x = spawn.x;
   runtime.y = EYE;
   runtime.z = spawn.z;
@@ -93,6 +131,13 @@ export function loadRuntime(maze: MazeData): void {
   runtime.vz = 0;
   runtime.speed = 0;
   runtime.collected = new Set();
+  runtime.blocks = 0;
+  runtime.stamps = 0;
+  runtime.popped = new Set();
+  runtime.openDoors = new Set();
+  runtime.lastWarp = -1;
+  runtime.lastBoostKey = "";
+  runtime.padBoostUntil = 0;
   runtime.visited = new Uint8Array(maze.cols * maze.rows);
   runtime.time = 0;
   runtime.injectedKeys = null;
@@ -106,10 +151,52 @@ export function loadRuntime(maze: MazeData): void {
   runtime.bobPhase = 0;
   runtime.lastBump = 0;
   runtime.lastFoot = 0;
+  runtime.lastLockNudge = 0;
+  runtime.boostUntil = 0;
+  runtime.revealUntil = 0;
+  runtime.compassUntil = 0;
+  runtime.lockHintUntil = 0;
+  runtime.doorHintUntil = 0;
+  runtime.hop = 0;
+  runtime.fovKick = 0;
   runtime.reducedMotion =
     typeof matchMedia !== "undefined" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
+  rebuildCollision();
   markExplore(maze.start.cx, maze.start.cz);
+}
+
+export function rebuildCollision(): void {
+  const maze = runtime.maze;
+  if (!maze) {
+    runtime.aabbs = [];
+    return;
+  }
+  const boxes = maze.aabbs.slice();
+  for (const d of maze.doors) {
+    if (!runtime.openDoors.has(d.id)) boxes.push(d.aabb);
+  }
+  runtime.aabbs = boxes;
+}
+
+export function tryOpenDoors(): boolean {
+  const maze = runtime.maze;
+  if (!maze) return false;
+  let opened = false;
+  for (const d of maze.doors) {
+    if (runtime.openDoors.has(d.id)) continue;
+    if (runtime.stamps < d.need) continue;
+    runtime.openDoors.add(d.id);
+    opened = true;
+  }
+  if (opened) rebuildCollision();
+  return opened;
+}
+
+export function exitIsLocked(): boolean {
+  const maze = runtime.maze;
+  if (!maze || !maze.exitNeedsAll) return false;
+  return runtime.blocks < maze.totalBlocks;
 }
 
 export function markExplore(cx: number, cz: number): void {
