@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CELL, PALETTE, WALL_H } from "./constants";
+import { CELL, PALETTE, WALL_H, WALL_T } from "./constants";
 import type { MazeData, PickupKind, PickupSpec } from "./maze";
 import { cellCenter, isCourtyardCell, openDoorsOf } from "./maze";
 
@@ -37,24 +37,30 @@ function setInstance(
   mesh.setMatrixAt(i, _m);
 }
 
+function freezeInstanced(mesh: THREE.InstancedMesh) {
+  mesh.frustumCulled = false;
+  mesh.matrixAutoUpdate = false;
+  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+}
+
 function makeSignTexture(text: string, bg: string): THREE.CanvasTexture {
   const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 192;
+  c.width = 256;
+  c.height = 96;
   const g = c.getContext("2d")!;
   g.fillStyle = bg;
-  g.fillRect(0, 0, 512, 192);
+  g.fillRect(0, 0, 256, 96);
   g.strokeStyle = "#111111";
-  g.lineWidth = 18;
-  g.strokeRect(10, 10, 492, 172);
+  g.lineWidth = 10;
+  g.strokeRect(5, 5, 246, 86);
   g.fillStyle = "#111111";
-  g.font = '900 110px "Archivo Black", system-ui, sans-serif';
+  g.font = '900 52px "Archivo Black", system-ui, sans-serif';
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.fillText(text, 256, 104);
+  g.fillText(text, 128, 52);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = 2;
   t.needsUpdate = true;
   return t;
 }
@@ -64,24 +70,13 @@ function boxMesh(
   sy: number,
   sz: number,
   color: number,
-  outlined = true,
-): THREE.Group {
-  const g = new THREE.Group();
-  if (outlined) {
-    const shell = new THREE.Mesh(
-      new THREE.BoxGeometry(sx + 0.08, sy + 0.08, sz + 0.08),
-      new THREE.MeshBasicMaterial({ color: PALETTE.ink }),
-    );
-    g.add(shell);
-  }
+): THREE.Mesh {
   const core = new THREE.Mesh(
     new THREE.BoxGeometry(sx, sy, sz),
     new THREE.MeshLambertMaterial({ color }),
   );
   core.castShadow = true;
-  core.receiveShadow = true;
-  g.add(core);
-  return g;
+  return core;
 }
 
 export function buildWorld(maze: MazeData): WorldHandle {
@@ -139,7 +134,7 @@ export function buildWorld(maze: MazeData): WorldHandle {
       else if (h === 0) color = PALETTE.cream;
       else if (h === 1) color = PALETTE.sun;
       else if (h === 2) color = PALETTE.cyan;
-      setInstance(tiles, ti, c.x, 0.045, c.z, CELL * 0.98, 0.09, CELL * 0.98);
+      setInstance(tiles, ti, c.x, 0.03, c.z, CELL * 0.96, 0.06, CELL * 0.96);
       _c.setHex(color);
       tiles.setColorAt(ti, _c);
       ti++;
@@ -147,43 +142,76 @@ export function buildWorld(maze: MazeData): WorldHandle {
   }
   tiles.instanceMatrix.needsUpdate = true;
   if (tiles.instanceColor) tiles.instanceColor.needsUpdate = true;
+  freezeInstanced(tiles);
+  tiles.receiveShadow = true;
+  tiles.castShadow = false;
   group.add(tiles);
 
   const wallGeo = trackGeo(new THREE.BoxGeometry(1, 1, 1));
   const inkMat = trackMat(new THREE.MeshLambertMaterial({ color: PALETTE.ink }));
-  const wallMat = trackMat(new THREE.MeshLambertMaterial({ color: 0xffffff }));
+  const wallMat = trackMat(
+    new THREE.MeshLambertMaterial({
+      color: 0xffffff,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    }),
+  );
   const n = maze.walls.length;
   const walls = new THREE.InstancedMesh(wallGeo, wallMat, n);
   const caps = new THREE.InstancedMesh(wallGeo, inkMat, n);
-  const kicks = new THREE.InstancedMesh(wallGeo, inkMat, n);
   walls.castShadow = true;
-  walls.receiveShadow = true;
-  caps.castShadow = true;
-  kicks.receiveShadow = true;
-  walls.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-  caps.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-  kicks.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  walls.receiveShadow = false;
+  caps.castShadow = false;
+  caps.receiveShadow = false;
+
+  const postMap = new Map<string, { x: number; z: number }>();
+  const addPost = (x: number, z: number) => {
+    const k = `${Math.round(x * 25)}_${Math.round(z * 25)}`;
+    if (!postMap.has(k)) postMap.set(k, { x, z });
+  };
+
   maze.walls.forEach((w, i) => {
-    setInstance(walls, i, w.x, w.y, w.z, w.sx, w.sy, w.sz);
-    setInstance(
-      caps,
-      i,
-      w.x,
-      w.y + w.sy * 0.5 - 0.05,
-      w.z,
-      w.sx + 0.07,
-      0.1,
-      w.sz + 0.07,
-    );
-    setInstance(kicks, i, w.x, 0.07, w.z, w.sx + 0.05, 0.14, w.sz + 0.05);
+    const alongX = w.sx >= w.sz;
+    const visSx = alongX ? Math.max(0.08, w.sx - WALL_T * 2 - 0.008) : w.sx;
+    const visSz = alongX ? w.sz : Math.max(0.08, w.sz - WALL_T * 2 - 0.008);
+    setInstance(walls, i, w.x, w.y, w.z, visSx, w.sy, visSz);
+    setInstance(caps, i, w.x, WALL_H + 0.04, w.z, visSx + 0.04, 0.08, visSz + 0.04);
     _c.setHex(w.color);
     walls.setColorAt(i, _c);
+    if (alongX) {
+      addPost(w.x - w.sx * 0.5 + WALL_T * 0.5, w.z);
+      addPost(w.x + w.sx * 0.5 - WALL_T * 0.5, w.z);
+    } else {
+      addPost(w.x, w.z - w.sz * 0.5 + WALL_T * 0.5);
+      addPost(w.x, w.z + w.sz * 0.5 - WALL_T * 0.5);
+    }
   });
   walls.instanceMatrix.needsUpdate = true;
   caps.instanceMatrix.needsUpdate = true;
-  kicks.instanceMatrix.needsUpdate = true;
   if (walls.instanceColor) walls.instanceColor.needsUpdate = true;
-  group.add(walls, caps, kicks);
+  freezeInstanced(walls);
+  freezeInstanced(caps);
+  group.add(walls, caps);
+
+  const postList = [...postMap.values()];
+  if (postList.length) {
+    const posts = new THREE.InstancedMesh(wallGeo, inkMat, postList.length);
+    const postCaps = new THREE.InstancedMesh(wallGeo, inkMat, postList.length);
+    posts.castShadow = true;
+    posts.receiveShadow = false;
+    postCaps.castShadow = false;
+    for (let i = 0; i < postList.length; i++) {
+      const p = postList[i]!;
+      setInstance(posts, i, p.x, WALL_H * 0.5, p.z, WALL_T, WALL_H, WALL_T);
+      setInstance(postCaps, i, p.x, WALL_H + 0.04, p.z, WALL_T + 0.05, 0.08, WALL_T + 0.05);
+    }
+    posts.instanceMatrix.needsUpdate = true;
+    postCaps.instanceMatrix.needsUpdate = true;
+    freezeInstanced(posts);
+    freezeInstanced(postCaps);
+    group.add(posts, postCaps);
+  }
 
   const exitC = cellCenter(maze.exit.cx, maze.exit.cz);
   const exitGroup = new THREE.Group();
@@ -346,36 +374,36 @@ function decorateInterior(
     return t;
   });
 
+  const posterGeo = trackGeo(new THREE.PlaneGeometry(1.15, 0.44));
+  const posterBackGeo = trackGeo(new THREE.PlaneGeometry(1.24, 0.52));
+  const posterInk = trackMat(new THREE.MeshBasicMaterial({ color: PALETTE.ink }));
+  const posterMats = posterTex.map((tex) =>
+    trackMat(new THREE.MeshBasicMaterial({ map: tex, toneMapped: false })),
+  );
+
   let posterN = 0;
-  const posterCap = 18;
+  const posterCap = 12;
   for (let z = 0; z < maze.rows && posterN < posterCap; z++) {
     for (let x = 0; x < maze.cols && posterN < posterCap; x++) {
       if (((x * 5 + z * 11 + maze.seed) & 7) > 2) continue;
       const cell = maze.cellWalls[z]![x]!;
       const c = cellCenter(x, z);
       const faces: { px: number; pz: number; rot: number; wall: boolean }[] = [
-        { px: c.x, pz: c.z - CELL * 0.5 + 0.2, rot: 0, wall: cell.n },
-        { px: c.x, pz: c.z + CELL * 0.5 - 0.2, rot: Math.PI, wall: cell.s },
-        { px: c.x + CELL * 0.5 - 0.2, pz: c.z, rot: -Math.PI / 2, wall: cell.e },
-        { px: c.x - CELL * 0.5 + 0.2, pz: c.z, rot: Math.PI / 2, wall: cell.w },
+        { px: c.x, pz: c.z - CELL * 0.5 + 0.22, rot: 0, wall: cell.n },
+        { px: c.x, pz: c.z + CELL * 0.5 - 0.22, rot: Math.PI, wall: cell.s },
+        { px: c.x + CELL * 0.5 - 0.22, pz: c.z, rot: -Math.PI / 2, wall: cell.e },
+        { px: c.x - CELL * 0.5 + 0.22, pz: c.z, rot: Math.PI / 2, wall: cell.w },
       ];
       const face = faces.find((f) => f.wall);
       if (!face) continue;
-      const tex = posterTex[posterN % posterTex.length]!;
-      const mat = trackMat(
-        new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }),
-      );
-      const board = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(1.15, 0.44)), mat);
+      const mat = posterMats[posterN % posterMats.length]!;
+      const board = new THREE.Mesh(posterGeo, mat);
       board.position.set(face.px, 1.55, face.pz);
       board.rotation.y = face.rot;
-      const back = new THREE.Mesh(
-        trackGeo(new THREE.PlaneGeometry(1.24, 0.52)),
-        trackMat(new THREE.MeshBasicMaterial({ color: PALETTE.ink })),
-      );
+      const back = new THREE.Mesh(posterBackGeo, posterInk);
       back.position.copy(board.position);
       back.rotation.y = face.rot;
-      const inward = 0.012;
-      back.translateZ(-inward);
+      back.translateZ(-0.012);
       group.add(back, board);
       posterN++;
     }
@@ -396,10 +424,12 @@ function decorateInterior(
       if (openDoorsOf(maze.cellWalls[z]![x]!) >= 3) lampCells.push({ x, z });
     }
   }
-  const lampCount = Math.min(lampCells.length, 28);
+  const lampCount = Math.min(lampCells.length, 18);
   if (lampCount > 0) {
     const shells = new THREE.InstancedMesh(lampGeo, lampInk, lampCount);
     const cores = new THREE.InstancedMesh(lampGeo, lampFill, lampCount);
+    shells.castShadow = false;
+    cores.castShadow = false;
     for (let i = 0; i < lampCount; i++) {
       const cell = lampCells[i]!;
       const c = cellCenter(cell.x, cell.z);
@@ -408,9 +438,13 @@ function decorateInterior(
     }
     shells.instanceMatrix.needsUpdate = true;
     cores.instanceMatrix.needsUpdate = true;
+    freezeInstanced(shells);
+    freezeInstanced(cores);
     group.add(shells, cores);
   }
 
+  const totemSpots: { x: number; z: number; color: number }[] = [];
+  const totemPalette = [PALETTE.sun, PALETTE.cyan, PALETTE.pink, PALETTE.lime];
   for (let z = 0; z < maze.rows; z++) {
     for (let x = 0; x < maze.cols; x++) {
       if (openDoorsOf(maze.cellWalls[z]![x]!) !== 1) continue;
@@ -420,27 +454,48 @@ function decorateInterior(
       if (maze.pops.some((t) => t.cx === x && t.cz === z)) continue;
       if (isCourtyardCell(maze, x, z)) continue;
       const c = cellCenter(x, z);
-      const palette = [PALETTE.sun, PALETTE.cyan, PALETTE.pink, PALETTE.lime];
-      const col = palette[(x + z) % palette.length]!;
-      const totem = new THREE.Group();
-      totem.position.set(c.x, 0, c.z);
-      const b1 = boxMesh(0.42, 0.38, 0.42, col);
-      b1.position.y = 0.28;
-      const b2 = boxMesh(0.3, 0.32, 0.3, PALETTE.ink, false);
-      b2.position.y = 0.64;
-      const b3 = boxMesh(0.22, 0.22, 0.22, col);
-      b3.position.y = 0.92;
-      totem.add(b1, b2, b3);
-      totem.userData.spinY = 0.35;
-      spinners.push(totem);
-      group.add(totem);
+      totemSpots.push({
+        x: c.x,
+        z: c.z,
+        color: totemPalette[(x + z) % totemPalette.length]!,
+      });
     }
+  }
+  if (totemSpots.length) {
+    const totemGeo = trackGeo(new THREE.BoxGeometry(1, 1, 1));
+    const totemFill = trackMat(new THREE.MeshLambertMaterial({ color: 0xffffff }));
+    const totemInk = trackMat(new THREE.MeshLambertMaterial({ color: PALETTE.ink }));
+    const b1 = new THREE.InstancedMesh(totemGeo, totemFill, totemSpots.length);
+    const b2 = new THREE.InstancedMesh(totemGeo, totemInk, totemSpots.length);
+    const b3 = new THREE.InstancedMesh(totemGeo, totemFill, totemSpots.length);
+    b1.castShadow = true;
+    b2.castShadow = false;
+    b3.castShadow = false;
+    b1.receiveShadow = false;
+    for (let i = 0; i < totemSpots.length; i++) {
+      const s = totemSpots[i]!;
+      setInstance(b1, i, s.x, 0.28, s.z, 0.42, 0.38, 0.42);
+      setInstance(b2, i, s.x, 0.64, s.z, 0.3, 0.32, 0.3);
+      setInstance(b3, i, s.x, 0.92, s.z, 0.22, 0.22, 0.22);
+      _c.setHex(s.color);
+      b1.setColorAt(i, _c);
+      b3.setColorAt(i, _c);
+    }
+    b1.instanceMatrix.needsUpdate = true;
+    b2.instanceMatrix.needsUpdate = true;
+    b3.instanceMatrix.needsUpdate = true;
+    if (b1.instanceColor) b1.instanceColor.needsUpdate = true;
+    if (b3.instanceColor) b3.instanceColor.needsUpdate = true;
+    freezeInstanced(b1);
+    freezeInstanced(b2);
+    freezeInstanced(b3);
+    group.add(b1, b2, b3);
   }
 
   for (const yard of maze.courtyards) {
     const sculpture = new THREE.Group();
     sculpture.position.set(yard.x, 0, yard.z);
-    const base = boxMesh(1.15, 0.28, 1.15, PALETTE.ink, false);
+    const base = boxMesh(1.15, 0.28, 1.15, PALETTE.ink);
     base.position.y = 0.2;
     const mid = boxMesh(0.72, 0.72, 0.72, PALETTE.sun);
     mid.position.y = 0.78;
@@ -526,7 +581,7 @@ function decorateInterior(
     const yaw = Math.atan2(pad.dx, pad.dz);
     g.rotation.y = yaw;
     const chev = boxMesh(0.55, 0.08, 0.85, PALETTE.sun);
-    const tip = boxMesh(0.32, 0.1, 0.32, PALETTE.ink, false);
+    const tip = boxMesh(0.32, 0.1, 0.32, PALETTE.ink);
     tip.position.set(0, 0.02, -0.42);
     g.add(chev, tip);
     group.add(g);
@@ -540,7 +595,7 @@ function decorateInterior(
     slab.position.y = WALL_H * 0.46;
     g.add(slab);
     for (let i = -1; i <= 1; i++) {
-      const bar = boxMesh(0.12, WALL_H * 0.8, 0.2, PALETTE.ink, false);
+      const bar = boxMesh(0.12, WALL_H * 0.8, 0.2, PALETTE.ink);
       bar.position.set(i * 0.7, WALL_H * 0.45, 0);
       g.add(bar);
     }
@@ -620,6 +675,10 @@ function buildSkyline(
   outlines.instanceMatrix.needsUpdate = true;
   bodies.instanceMatrix.needsUpdate = true;
   if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
+  freezeInstanced(outlines);
+  freezeInstanced(bodies);
+  outlines.castShadow = false;
+  bodies.castShadow = false;
   g.add(outlines, bodies);
   return g;
 }

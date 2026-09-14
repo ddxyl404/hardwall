@@ -82,6 +82,18 @@ const KIND_COLOR: Record<PickupKind, number> = {
   stamp: PALETTE.cream,
 };
 
+function isCoarsePointer(): boolean {
+  return (
+    (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) ||
+    (typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches)
+  );
+}
+
+function pickPixelRatio(): number {
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  return Math.min(dpr, isCoarsePointer() ? 1.15 : 1.4);
+}
+
 export class HardwallEngine {
   private canvas: HTMLCanvasElement;
   private renderer: THREE.WebGLRenderer;
@@ -108,14 +120,15 @@ export class HardwallEngine {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: !isCoarsePointer(),
       alpha: false,
       powerPreference: "high-performance",
     });
     this.renderer.setClearColor(PALETTE.sky);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    this.renderer.setPixelRatio(pickPixelRatio());
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
 
@@ -123,7 +136,7 @@ export class HardwallEngine {
     this.scene.background = new THREE.Color(PALETTE.sky);
     this.scene.fog = new THREE.Fog(PALETTE.sky, 48, 95);
 
-    this.camera = new THREE.PerspectiveCamera(78, 1, 0.08, 180);
+    this.camera = new THREE.PerspectiveCamera(78, 1, 0.12, 96);
     this.camera.rotation.order = "YXZ";
 
     this.hemi = new THREE.HemisphereLight(PALETTE.sky, PALETTE.cream, 1.35);
@@ -131,14 +144,14 @@ export class HardwallEngine {
     this.sun = new THREE.DirectionalLight(0xfff6d0, 1.28);
     this.sun.position.set(22, 34, 14);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.mapSize.set(512, 512);
     this.sun.shadow.camera.near = 4;
     this.sun.shadow.camera.right = 48;
     this.sun.shadow.camera.left = -48;
     this.sun.shadow.camera.top = 48;
     this.sun.shadow.camera.bottom = -48;
-    this.sun.shadow.bias = -0.0004;
-    this.sun.shadow.normalBias = 0.035;
+    this.sun.shadow.bias = -0.0012;
+    this.sun.shadow.normalBias = 0.04;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
 
@@ -218,7 +231,8 @@ export class HardwallEngine {
     this.sun.shadow.camera.bottom = -span;
     this.sun.shadow.camera.updateProjectionMatrix();
     const diff = DIFFICULTIES[maze.difficulty];
-    this.scene.fog = new THREE.Fog(PALETTE.sky, diff.fogNear, diff.fogFar);
+    this.scene.fog = new THREE.Fog(PALETTE.sky, diff.fogNear, Math.min(diff.fogFar, 96));
+    this.renderer.shadowMap.needsUpdate = true;
     this.syncCamera(0);
   }
 
@@ -226,6 +240,7 @@ export class HardwallEngine {
     const parent = this.canvas.parentElement ?? this.canvas;
     const w = Math.max(1, parent.clientWidth);
     const h = Math.max(1, parent.clientHeight);
+    this.renderer.setPixelRatio(pickPixelRatio());
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -454,7 +469,7 @@ export class HardwallEngine {
     if (moved.hit && runtime.speed > 1.2 && runtime.time - runtime.lastBump > 0.28) {
       runtime.lastBump = runtime.time;
       sfxBump();
-      runtime.trauma = Math.min(1, runtime.trauma + 0.18);
+      runtime.trauma = Math.min(1, runtime.trauma + 0.1);
     }
 
     if (runtime.speed > 0.5) {
@@ -747,10 +762,11 @@ export class HardwallEngine {
     }
     if (!runtime.reducedMotion && runtime.trauma > 0) {
       const shake = runtime.trauma * runtime.trauma;
-      x += (Math.random() * 2 - 1) * shake * 0.08;
-      y += (Math.random() * 2 - 1) * shake * 0.05;
-      z += (Math.random() * 2 - 1) * shake * 0.08;
-      runtime.trauma = Math.max(0, runtime.trauma - dt * 2.4);
+      const t = runtime.time * 26;
+      x += Math.sin(t) * shake * 0.03;
+      y += Math.cos(t * 1.3) * shake * 0.02;
+      z += Math.sin(t * 0.7) * shake * 0.03;
+      runtime.trauma = Math.max(0, runtime.trauma - dt * 2.8);
     }
     this.camera.position.set(x, y, z);
   }

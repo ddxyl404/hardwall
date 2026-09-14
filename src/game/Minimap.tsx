@@ -13,8 +13,12 @@ export function Minimap() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     let id = 0;
-    const draw = () => {
+    let last = 0;
+    const draw = (t: number) => {
       id = requestAnimationFrame(draw);
+      if (t - last < 90) return;
+      last = t;
+      if (runtime.phase !== "playing" && runtime.phase !== "paused") return;
       paint(ctx);
     };
     id = requestAnimationFrame(draw);
